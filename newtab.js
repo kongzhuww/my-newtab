@@ -2,9 +2,8 @@
 
 // ---------- storage ----------
 function getCfg() {
-  return new Promise((res) => chrome.storage.local.get(["todoistToken", "ghUser", "ghToken", "vpsUrl"], res));
+  return new Promise((res) => chrome.storage.local.get(["todoistToken", "ghUser", "ghToken", "vpsUrl", "city"], res));
 }
-const DEFAULT_VPS = "https://logicweaver.me/vps/stats";
 
 // ---------- helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -225,6 +224,7 @@ function gauge(label, pct, sub) {
 }
 async function loadVps(url) {
   const body = $("vps-body");
+  if (!url) { body.innerHTML = `<p class="notice">未配置 VPS。到 <a href="options.html" target="_blank">设置</a> 填探针地址（返回 stats JSON 的 HTTPS 接口）。</p>`; return; }
   try {
     const r = await fetch(url, { headers: { Accept: "application/json" } });
     const d = await r.json();
@@ -332,7 +332,6 @@ function initSearch() {
 }
 
 // ---------- weather ----------
-const WX_URL = "https://api.open-meteo.com/v1/forecast?latitude=30.59&longitude=114.31&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code,precipitation_probability&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=3&timezone=Asia%2FShanghai";
 function wxInfo(c) {
   if (c === 0) return { emoji: "☀️", label: "晴" };
   if (c <= 2) return { emoji: "🌤️", label: "少云" };
@@ -346,10 +345,20 @@ function wxInfo(c) {
   if (c >= 95) return { emoji: "⛈️", label: "雷雨" };
   return { emoji: "🌡️", label: "—" };
 }
-async function loadWeather() {
+async function loadWeather(city) {
   const body = $("weather-body");
+  if (!city) {
+    body.innerHTML = `<p class="notice">未设置城市。到 <a href="options.html" target="_blank">设置</a> 填写城市名（如 武汉 / Tokyo）。</p>`;
+    return;
+  }
+  body.innerHTML = `<p class="muted small">加载中…</p>`;
   try {
-    const d = await (await fetch(WX_URL)).json();
+    const g = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`)).json();
+    const loc = g.results && g.results[0];
+    if (!loc) { body.innerHTML = `<p class="notice">找不到城市「${esc(city)}」。</p>`; return; }
+    const t = $("wx-title"); if (t) t.textContent = `${loc.name || city} · 天气`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code,precipitation_probability&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=3&timezone=auto`;
+    const d = await (await fetch(url)).json();
     const cur = wxInfo(d.current.weather_code);
     const times = d.hourly.time, nowMs = Date.now();
     let start = times.findIndex((t) => new Date(t).getTime() >= nowMs);
@@ -463,7 +472,7 @@ async function boot() {
   setInterval(tick, 1000);
   initSearch();
   const cfg = await getCfg();
-  loadWeather();
+  loadWeather(cfg.city);
   loadAiHot();
   loadTrending();
   loadTopSites();
@@ -472,9 +481,8 @@ async function boot() {
   $("aihot-refresh").addEventListener("click", loadAiHot);
   loadTodos(cfg.todoistToken);
   loadGitHub(cfg.ghUser, cfg.ghToken);
-  const vpsUrl = cfg.vpsUrl || DEFAULT_VPS;
-  loadVps(vpsUrl);
-  setInterval(() => loadVps(vpsUrl), 15000);
+  loadVps(cfg.vpsUrl);
+  if (cfg.vpsUrl) setInterval(() => loadVps(cfg.vpsUrl), 15000);
   $("todo-refresh").addEventListener("click", () => loadTodos(cfg.todoistToken));
 }
 boot();

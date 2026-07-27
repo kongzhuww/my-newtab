@@ -15,14 +15,20 @@
 4. 点「**加载解压缩的扩展**」,选中本仓库文件夹。
 5. 新开一个标签页,就能看到面板。
 
-## 配置
+## 配置（每个用户填自己的，全部只存本地）
 
-- **B站收藏夹**:无需配置。只要浏览器里登录了 bilibili.com,新标签页会自动显示你的收藏夹(点文件夹展开、点视频跳转)。若显示未登录,先去 bilibili.com 登录再刷新。
-- **Todoist / GitHub**:点面板左上角「⚙ 设置」(或插件详情 → 扩展选项),填:
-  - Todoist API Token(Todoist → Settings → Integrations → Developer)。
-  - GitHub 用户名(必填)+ Token(可选,私有/更高频率)。
+这是**通用**插件,不含任何个人默认值 —— 每项都是「登录 / 配置后才用」:
 
-配置保存在浏览器本地(`chrome.storage.local`),不上传任何服务器。
+- **B站收藏夹**:无需配置。只要浏览器登录了 bilibili.com,自动显示**你自己**的收藏夹。
+- **小黑盒**:跳转到你登录态下的收藏页。
+- 点面板左上「⚙ 设置」填:
+  - **城市**(天气,如「武汉」)。
+  - **Todoist API Token**(Todoist → Settings → Integrations → Developer)。
+  - **GitHub 用户名**(+ 可选 Token)。
+  - **VPS 探针地址**(可选,返回 stats JSON 的 HTTPS 接口)。
+- **知识库 / GitHub Star 分类**:存插件本地,各用各的。
+
+所有配置保存在浏览器本地(`chrome.storage.local`),不上传任何服务器。未配置的模块会显示「去设置填写」的提示,不影响其它模块。
 
 ## 文件
 

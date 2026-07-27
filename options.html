@@ -18,7 +18,13 @@
   <body>
     <div class="opt">
       <h1 style="font-size: 20px;">新标签页设置</h1>
-      <p class="muted small">B站收藏夹用你浏览器里的登录态,无需在这里填。</p>
+      <p class="muted small">B站收藏夹用你浏览器里的登录态,无需在这里填。所有配置只存本地。</p>
+
+      <div class="field">
+        <label>城市（天气）</label>
+        <input id="city" type="text" placeholder="如 武汉 / 北京 / Tokyo" />
+        <p class="hint">用于天气与预报,留空则不显示天气。</p>
+      </div>
 
       <div class="field">
         <label>Todoist API Token</label>
@@ -28,7 +34,7 @@
 
       <div class="field">
         <label>GitHub 用户名</label>
-        <input id="ghUser" type="text" placeholder="如 kongzhuww" />
+        <input id="ghUser" type="text" placeholder="如 octocat（你自己的用户名）" />
       </div>
 
       <div class="field">
@@ -39,8 +45,8 @@
 
       <div class="field">
         <label>VPS 探针地址（可选）</label>
-        <input id="vpsUrl" type="text" placeholder="默认 https://logicweaver.me/vps/stats" />
-        <p class="hint">返回 {load, cpu_count, mem, disk, uptime, hostname} 的 JSON 接口(需 HTTPS)。留空用默认。</p>
+        <input id="vpsUrl" type="text" placeholder="https://你的域名/stats" />
+        <p class="hint">返回 {load, cpu_count, mem, disk, uptime, hostname} 的 JSON 接口(需 HTTPS)。留空则不显示探针。</p>
       </div>
 
       <button id="save" class="save">保存</button>

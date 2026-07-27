@@ -13,6 +13,7 @@
     "https://logicweaver.me/*",
     "https://cdn.jsdelivr.net/*",
     "https://api.open-meteo.com/*",
+    "https://geocoding-api.open-meteo.com/*",
     "https://aihot.virxact.com/*",
     "https://monster-siren.hypergryph.com/*",
     "https://*.hycdn.cn/*"

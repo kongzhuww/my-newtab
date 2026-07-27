@@ -1,6 +1,6 @@
 "use strict";
 
-const keys = ["todoistToken", "ghUser", "ghToken", "vpsUrl"];
+const keys = ["todoistToken", "ghUser", "ghToken", "vpsUrl", "city"];
 
 chrome.storage.local.get(keys, (cfg) => {
   for (const k of keys) if (cfg[k]) document.getElementById(k).value = cfg[k];
