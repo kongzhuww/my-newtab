@@ -4,7 +4,7 @@
   "version": "0.3.0",
   "description": "个人新标签页仪表盘：时钟、B站收藏夹、Todoist 待办、GitHub Star、VPS 探针、小黑盒。",
   "chrome_url_overrides": { "newtab": "newtab.html" },
-  "permissions": ["storage"],
+  "permissions": ["storage", "topSites", "bookmarks", "favicon"],
   "host_permissions": [
     "https://api.bilibili.com/*",
     "https://*.bilibili.com/*",
