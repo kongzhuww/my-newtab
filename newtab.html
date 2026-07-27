@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>新标签页</title>
+    <link rel="stylesheet" href="newtab.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <!-- Clock -->
+      <section class="card clock-card">
+        <p id="greeting" class="muted">你好</p>
+        <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
+        <p id="date" class="muted date"></p>
+        <div class="clock-actions">
+          <a href="options.html" class="btn" target="_blank" rel="noreferrer">⚙ 设置</a>
+        </div>
+      </section>
+
+      <!-- Todoist -->
+      <section class="card">
+        <header class="card-head">
+          <h2>今日待办</h2>
+          <button id="todo-refresh" class="icon-btn" title="刷新">↻</button>
+        </header>
+        <div id="todo-body" class="card-body">
+          <p class="muted small">加载中…</p>
+        </div>
+      </section>
+
+      <!-- Bilibili favourites -->
+      <section class="card wide">
+        <header class="card-head">
+          <h2>B站收藏夹</h2>
+          <span id="bili-user" class="muted small"></span>
+        </header>
+        <div id="bili-body" class="card-body">
+          <p class="muted small">加载中…</p>
+        </div>
+      </section>
+
+      <!-- GitHub stars -->
+      <section class="card wide">
+        <header class="card-head">
+          <h2>GitHub Star</h2>
+          <span id="gh-user" class="muted small"></span>
+        </header>
+        <div id="gh-body" class="card-body">
+          <p class="muted small">加载中…</p>
+        </div>
+      </section>
+    </main>
+    <script src="newtab.js"></script>
+  </body>
+</html>
