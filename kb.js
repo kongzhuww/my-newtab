@@ -8,7 +8,7 @@
   const uid = () => { try { return crypto.randomUUID(); } catch { return Date.now() + "-" + Math.floor(Math.random() * 1e6); } };
   const save = () => chrome.storage.local.set({ kbNotes: notes });
 
-  const launch = mk("button", "kb-launch", "📚 知识库");
+  const launch = mk("button", "tb-pill", "📚 知识库");
   const panel = mk("div", "kb-panel");
   panel.style.display = "none";
   panel.innerHTML =
@@ -16,7 +16,8 @@
     '<input class="kb-search" placeholder="搜索标题 / 内容 / 标签…">' +
     '<div class="kb-form" style="display:none"><input class="kb-t" placeholder="标题"><textarea class="kb-c" placeholder="内容…"></textarea><input class="kb-g" placeholder="标签,逗号分隔"><button class="kb-save">保存</button></div>' +
     '<div class="kb-list"></div>';
-  document.body.append(launch, panel);
+  (document.getElementById("tb-launchers") || document.body).append(launch);
+  document.body.append(panel);
 
   const q = (s) => panel.querySelector(s);
   const listEl = q(".kb-list"), searchEl = q(".kb-search"), form = q(".kb-form");

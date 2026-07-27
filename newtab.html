@@ -9,6 +9,14 @@
     <link rel="stylesheet" href="vendor/spine-player.css" />
   </head>
   <body>
+    <header class="topbar">
+      <div class="tb-brand"><span class="tb-logo">LW</span><b>新标签页</b></div>
+      <div class="tb-actions">
+        <span id="tb-launchers"></span>
+        <button id="theme-toggle" class="tb-btn" title="切换主题">🌙</button>
+        <a href="options.html" class="tb-btn" target="_blank" rel="noreferrer" title="设置">⚙</a>
+      </div>
+    </header>
     <main class="wrap">
       <!-- Search -->
       <form id="search" class="search wide">
@@ -21,10 +29,6 @@
         <p id="greeting" class="muted">你好</p>
         <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
         <p id="date" class="date"></p>
-        <div class="clock-actions">
-          <button id="theme-toggle" class="btn" title="切换主题">🌙 主题</button>
-          <a href="options.html" class="btn" target="_blank" rel="noreferrer">⚙ 设置</a>
-        </div>
       </section>
 
       <!-- Todoist -->

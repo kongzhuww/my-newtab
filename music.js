@@ -16,7 +16,7 @@
   async function api(path) { const r = await fetch(API + path, { headers: { Accept: "application/json" } }); const j = await r.json(); return j && j.data !== undefined ? j.data : j; }
 
   // ---- DOM ----
-  const launch = mk("button", "ms-launch", "🎵 塞壬电台");
+  const launch = mk("button", "tb-pill", "🎵 塞壬电台");
   const panel = mk("div", "ms-panel");
   panel.style.display = "none";
   panel.innerHTML =
@@ -30,7 +30,8 @@
   const tv = mk("div", "ms-tv");
   tv.style.display = "none";
   tv.innerHTML = '<div class="ms-tv-head"><span class="ms-tv-title">明日方舟 MV</span><button class="ms-tv-close">✕</button></div><div class="ms-tv-screen"></div>';
-  document.body.append(launch, panel, tv);
+  (document.getElementById("tb-launchers") || document.body).append(launch);
+  document.body.append(panel, tv);
 
   const browse = $(".ms-browse", panel), now = $(".ms-now", panel), backBtn = $(".ms-back", panel);
 

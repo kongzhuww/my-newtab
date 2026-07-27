@@ -453,7 +453,9 @@ async function loadTrending() {
 // ---------- theme ----------
 function applyThemeLabel() {
   const dark = document.documentElement.dataset.theme !== "light";
-  $("theme-toggle").textContent = dark ? "🌙 主题" : "☀️ 主题";
+  const t = $("theme-toggle");
+  t.textContent = dark ? "🌙" : "☀️";
+  t.title = dark ? "切换到浅色" : "切换到深色";
 }
 function initTheme() {
   applyThemeLabel();
