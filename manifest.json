@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "LogicWeaver 新标签页",
-  "version": "0.1.0",
-  "description": "个人新标签页仪表盘：时钟、B站收藏夹、Todoist 待办、GitHub Star。",
+  "version": "0.3.0",
+  "description": "个人新标签页仪表盘：时钟、B站收藏夹、Todoist 待办、GitHub Star、VPS 探针、小黑盒。",
   "chrome_url_overrides": { "newtab": "newtab.html" },
   "permissions": ["storage"],
   "host_permissions": [
     "https://api.bilibili.com/*",
     "https://*.bilibili.com/*",
     "https://api.todoist.com/*",
-    "https://api.github.com/*"
+    "https://api.github.com/*",
+    "https://logicweaver.me/*"
   ],
   "options_page": "options.html",
   "action": { "default_title": "新标签页设置" }

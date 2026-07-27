@@ -37,6 +37,12 @@
         <p class="hint">只读即可:<a href="https://github.com/settings/tokens?type=beta" target="_blank">生成 token</a>（勾选 public/starred 读取权限）。</p>
       </div>
 
+      <div class="field">
+        <label>VPS 探针地址（可选）</label>
+        <input id="vpsUrl" type="text" placeholder="默认 https://logicweaver.me/vps/stats" />
+        <p class="hint">返回 {load, cpu_count, mem, disk, uptime, hostname} 的 JSON 接口(需 HTTPS)。留空用默认。</p>
+      </div>
+
       <button id="save" class="save">保存</button>
       <span id="saved"></span>
     </div>
