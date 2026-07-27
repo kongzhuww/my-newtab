@@ -11,7 +11,9 @@
     "https://api.todoist.com/*",
     "https://api.github.com/*",
     "https://logicweaver.me/*",
-    "https://cdn.jsdelivr.net/*"
+    "https://cdn.jsdelivr.net/*",
+    "https://api.open-meteo.com/*",
+    "https://aihot.virxact.com/*"
   ],
   "options_page": "options.html",
   "action": { "default_title": "新标签页设置" }

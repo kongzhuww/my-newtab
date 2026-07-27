@@ -301,6 +301,105 @@ function loadBookmarks() {
   });
 }
 
+// ---------- search ----------
+function initSearch() {
+  const form = $("search"), input = $("search-input");
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    const isUrl = /^https?:\/\//i.test(q) || (!q.includes(" ") && /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(q));
+    location.href = isUrl ? (/^https?:/i.test(q) ? q : "https://" + q) : "https://www.bing.com/search?q=" + encodeURIComponent(q);
+  });
+}
+
+// ---------- weather ----------
+const WX_URL = "https://api.open-meteo.com/v1/forecast?latitude=30.59&longitude=114.31&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code,precipitation_probability&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=3&timezone=Asia%2FShanghai";
+function wxInfo(c) {
+  if (c === 0) return { emoji: "☀️", label: "晴" };
+  if (c <= 2) return { emoji: "🌤️", label: "少云" };
+  if (c === 3) return { emoji: "☁️", label: "多云" };
+  if (c === 45 || c === 48) return { emoji: "🌫️", label: "雾" };
+  if (c >= 51 && c <= 57) return { emoji: "🌦️", label: "毛毛雨" };
+  if (c >= 61 && c <= 67) return { emoji: "🌧️", label: "雨" };
+  if (c >= 71 && c <= 77) return { emoji: "🌨️", label: "雪" };
+  if (c >= 80 && c <= 82) return { emoji: "🌧️", label: "阵雨" };
+  if (c >= 85 && c <= 86) return { emoji: "🌨️", label: "阵雪" };
+  if (c >= 95) return { emoji: "⛈️", label: "雷雨" };
+  return { emoji: "🌡️", label: "—" };
+}
+async function loadWeather() {
+  const body = $("weather-body");
+  try {
+    const d = await (await fetch(WX_URL)).json();
+    const cur = wxInfo(d.current.weather_code);
+    const times = d.hourly.time, nowMs = Date.now();
+    let start = times.findIndex((t) => new Date(t).getTime() >= nowMs);
+    if (start < 0) start = 0;
+    let hours = "";
+    for (let i = start; i < Math.min(start + 5, times.length); i++) {
+      hours += `<div class="wx-h"><span class="hh">${i === start ? "现在" : new Date(times[i]).getHours() + "时"}</span><span class="he">${wxInfo(d.hourly.weather_code[i]).emoji}</span><span class="ht">${Math.round(d.hourly.temperature_2m[i])}°</span></div>`;
+    }
+    let rain = "未来 12 小时暂无降水 ☂️";
+    for (let i = start; i < Math.min(start + 12, times.length); i++) {
+      const c = d.hourly.weather_code[i], p = d.hourly.precipitation_probability?.[i] || 0;
+      if (c >= 51 || p >= 60) {
+        const hr = new Date(times[i]).getHours(), snow = (c >= 71 && c <= 77) || c === 85 || c === 86;
+        rain = `预计 ${hr}:00 ${snow ? "有雪" : "有雨"}${p ? `（${p}%）` : ""} 🌧️`;
+        break;
+      }
+    }
+    let days = "", labels = ["今天", "明天", "后天"];
+    for (let i = 1; i < Math.min(3, d.daily.time.length); i++) {
+      days += `<span>${labels[i]} ${wxInfo(d.daily.weather_code[i]).emoji} ${Math.round(d.daily.temperature_2m_max[i])}°/${Math.round(d.daily.temperature_2m_min[i])}°</span>`;
+    }
+    body.innerHTML = `<div class="wx-cur"><span class="wx-emoji">${cur.emoji}</span><span class="wx-temp">${Math.round(d.current.temperature_2m)}°</span></div><p class="wx-sub">${cur.label} · 最高 ${Math.round(d.daily.temperature_2m_max[0])}° / 最低 ${Math.round(d.daily.temperature_2m_min[0])}°</p><p class="wx-rain">${rain}</p><div class="wx-hours">${hours}</div><div class="wx-days">${days}</div>`;
+  } catch {
+    body.innerHTML = `<p class="notice">天气加载失败。</p>`;
+  }
+}
+
+// ---------- AI HOT ----------
+function pickStr(o, keys) {
+  for (const k of keys) { const v = o[k]; if (typeof v === "string" && v) return v; if (typeof v === "number") return String(v); }
+  return "";
+}
+function firstUrl(o, d) {
+  if ((d || 0) > 3) return "";
+  for (const v of Object.values(o)) {
+    if (typeof v === "string" && /^https?:\/\//i.test(v) && !/\.(png|jpe?g|gif|webp|svg|ico)(\?|$)/i.test(v)) return v;
+    if (v && typeof v === "object") { const n = firstUrl(v, (d || 0) + 1); if (n) return n; }
+  }
+  return "";
+}
+function absUrl(u) {
+  if (!u || u === "#") return "";
+  return /^https?:\/\//i.test(u) ? u : "https://aihot.virxact.com" + (u.startsWith("/") ? u : "/" + u);
+}
+async function loadAiHot() {
+  const body = $("aihot-body");
+  body.innerHTML = `<p class="muted small">加载中…</p>`;
+  try {
+    const r = await fetch("https://aihot.virxact.com/api/v1/items?mode=selected&window=24h&limit=12", { headers: { Accept: "application/json" } });
+    const j = await r.json();
+    const list = Array.isArray(j) ? j : j.items || j.data || j.results || [];
+    if (!list.length) { body.innerHTML = `<p class="muted small">暂无。</p>`; return; }
+    const grid = el("div", "aihot-grid");
+    list.slice(0, 12).forEach((it, i) => {
+      const url = absUrl(pickStr(it, ["sourceUrl", "source_url", "originalUrl", "origin"])) || absUrl(pickStr(it, ["url", "link", "readUrl", "href", "permalink"])) || firstUrl(it) || "#";
+      const a = el("a", "aihot-item");
+      a.href = url; a.target = "_blank"; a.rel = "noreferrer";
+      const sum = pickStr(it, ["summary", "description", "excerpt", "digest", "abstract"]);
+      a.innerHTML = `<span class="aihot-rank ${i < 3 ? "top" : ""}">${i + 1}</span><div style="min-width:0"><div class="aihot-t">${esc(pickStr(it, ["title", "headline", "name"]) || "无标题")}</div>${sum ? `<p class="aihot-s">${esc(sum)}</p>` : ""}<div class="aihot-m">${esc(pickStr(it, ["sourceName", "source_name", "site", "author", "from"]) || "")}</div></div>`;
+      grid.appendChild(a);
+    });
+    body.innerHTML = "";
+    body.appendChild(grid);
+  } catch {
+    body.innerHTML = `<p class="notice">AI HOT 加载失败。</p>`;
+  }
+}
+
 // ---------- theme ----------
 function applyThemeLabel() {
   const dark = document.documentElement.dataset.theme !== "light";
@@ -321,10 +420,14 @@ async function boot() {
   initTheme();
   tick();
   setInterval(tick, 1000);
+  initSearch();
   const cfg = await getCfg();
+  loadWeather();
+  loadAiHot();
   loadTopSites();
   loadBookmarks();
   loadBili();
+  $("aihot-refresh").addEventListener("click", loadAiHot);
   loadTodos(cfg.todoistToken);
   loadGitHub(cfg.ghUser, cfg.ghToken);
   const vpsUrl = cfg.vpsUrl || DEFAULT_VPS;

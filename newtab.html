@@ -10,6 +10,12 @@
   </head>
   <body>
     <main class="wrap">
+      <!-- Search -->
+      <form id="search" class="search wide">
+        <span class="s-icon">🔍</span>
+        <input id="search-input" placeholder="搜索，或输入网址回车直达…" autocomplete="off" />
+      </form>
+
       <!-- Clock -->
       <section class="card clock-card">
         <p id="greeting" class="muted">你好</p>
@@ -29,9 +35,53 @@
           <span class="grow"></span>
           <button id="todo-refresh" class="icon-btn" title="刷新">↻</button>
         </header>
-        <div id="todo-body">
-          <p class="muted small">加载中…</p>
-        </div>
+        <div id="todo-body"><p class="muted small">加载中…</p></div>
+      </section>
+
+      <!-- Weather -->
+      <section class="card">
+        <header class="card-head">
+          <span class="bar" style="background: linear-gradient(180deg,#38bdf8,#818cf8)"></span>
+          <h2>武汉 · 天气</h2>
+        </header>
+        <div id="weather-body"><p class="muted small">加载中…</p></div>
+      </section>
+
+      <!-- Heybox jump -->
+      <section class="card">
+        <header class="card-head">
+          <span class="bar" style="background: linear-gradient(180deg,#f97316,#facc15)"></span>
+          <h2>小黑盒收藏</h2>
+        </header>
+        <a class="heybox" href="https://www.xiaoheihe.cn/app/user/favour/content" target="_blank" rel="noreferrer">
+          <span class="hb-icon">🎮</span>
+          <span>
+            <span class="hb-title">打开我的小黑盒收藏 ↗</span>
+            <span class="hb-sub muted small">接口需签名、暂不内嵌，点此跳转收藏页</span>
+          </span>
+        </a>
+      </section>
+
+      <!-- VPS probe -->
+      <section class="card wide">
+        <header class="card-head">
+          <span class="bar" style="background: linear-gradient(180deg,#22d3ee,#3b82f6)"></span>
+          <h2>VPS 探针</h2>
+          <span class="grow"></span>
+          <span id="vps-host" class="dim small"></span>
+        </header>
+        <div id="vps-body"><p class="muted small">连接中…</p></div>
+      </section>
+
+      <!-- AI HOT -->
+      <section class="card wide">
+        <header class="card-head">
+          <span class="bar" style="background: linear-gradient(180deg,#34d399,#38bdf8)"></span>
+          <h2>AI HOT 热榜</h2>
+          <span class="grow"></span>
+          <button id="aihot-refresh" class="icon-btn" title="刷新">↻</button>
+        </header>
+        <div id="aihot-body"><p class="muted small">加载中…</p></div>
       </section>
 
       <!-- Top sites -->
@@ -52,34 +102,6 @@
         <div id="bm-body"><p class="muted small">加载中…</p></div>
       </section>
 
-      <!-- VPS probe -->
-      <section class="card">
-        <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#22d3ee,#3b82f6)"></span>
-          <h2>VPS 探针</h2>
-          <span class="grow"></span>
-          <span id="vps-host" class="dim small"></span>
-        </header>
-        <div id="vps-body">
-          <p class="muted small">连接中…</p>
-        </div>
-      </section>
-
-      <!-- Heybox jump -->
-      <section class="card">
-        <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#f97316,#facc15)"></span>
-          <h2>小黑盒收藏</h2>
-        </header>
-        <a class="heybox" href="https://www.xiaoheihe.cn/app/user/favour/content" target="_blank" rel="noreferrer">
-          <span class="hb-icon">🎮</span>
-          <span>
-            <span class="hb-title">打开我的小黑盒收藏 ↗</span>
-            <span class="hb-sub muted small">接口需签名、暂不内嵌，点此跳转收藏页</span>
-          </span>
-        </a>
-      </section>
-
       <!-- Bilibili favourites -->
       <section class="card wide">
         <header class="card-head">
@@ -88,9 +110,7 @@
           <span class="grow"></span>
           <span id="bili-user" class="muted small"></span>
         </header>
-        <div id="bili-body">
-          <p class="muted small">加载中…</p>
-        </div>
+        <div id="bili-body"><p class="muted small">加载中…</p></div>
       </section>
 
       <!-- GitHub stars -->
@@ -101,9 +121,7 @@
           <span class="grow"></span>
           <span id="gh-user" class="muted small"></span>
         </header>
-        <div id="gh-body">
-          <p class="muted small">加载中…</p>
-        </div>
+        <div id="gh-body"><p class="muted small">加载中…</p></div>
       </section>
     </main>
     <script src="newtab.js"></script>

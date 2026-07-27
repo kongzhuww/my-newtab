@@ -156,6 +156,36 @@ body {
 .repo .desc { margin: 7px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .repo .meta { margin-top: 10px; font-size: 11px; color: var(--dim); display: flex; gap: 14px; }
 
+/* search */
+.search { display: flex; align-items: center; gap: 10px; background: var(--glass); border: 1px solid var(--border); border-radius: 999px; padding: 4px 18px; }
+.search:focus-within { border-color: var(--border-strong); }
+.search .s-icon { font-size: 15px; opacity: 0.7; }
+.search input { flex: 1; border: 0; background: none; outline: none; color: var(--text); font-size: 15px; padding: 12px 0; }
+.search input::placeholder { color: var(--dim); }
+
+/* weather */
+.wx-cur { display: flex; align-items: center; gap: 12px; }
+.wx-emoji { font-size: 42px; line-height: 1; }
+.wx-temp { font-size: 40px; font-weight: 800; color: var(--heading); font-variant-numeric: tabular-nums; }
+.wx-sub { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.wx-rain { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+.wx-hours { display: flex; gap: 12px; margin-top: 8px; overflow-x: auto; padding-bottom: 4px; }
+.wx-h { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; }
+.wx-h .hh { font-size: 11px; color: var(--dim); }
+.wx-h .he { font-size: 16px; }
+.wx-h .ht { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+.wx-days { margin-top: 10px; display: flex; gap: 16px; font-size: 12px; color: var(--muted); }
+
+/* AI HOT */
+.aihot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.aihot-item { display: flex; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); text-decoration: none; color: var(--text); transition: border-color 0.15s; }
+.aihot-item:hover { border-color: rgba(52, 211, 153, 0.4); }
+.aihot-rank { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 8px; font-size: 12px; font-weight: 700; background: var(--surface-hover); color: var(--muted); }
+.aihot-rank.top { background: linear-gradient(135deg, #34d399, #38bdf8); color: #08121a; }
+.aihot-t { font-size: 13px; font-weight: 600; color: var(--heading); line-height: 1.35; }
+.aihot-s { margin: 4px 0 0; font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.aihot-m { margin-top: 6px; font-size: 11px; color: var(--dim); }
+
 /* top sites / shortcuts */
 .shortcuts { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .shortcut { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); text-decoration: none; color: var(--text); transition: border-color 0.15s, transform 0.15s; }
