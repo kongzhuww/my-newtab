@@ -12,7 +12,7 @@
       <section class="card clock-card">
         <p id="greeting" class="muted">你好</p>
         <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
-        <p id="date" class="muted date"></p>
+        <p id="date" class="date"></p>
         <div class="clock-actions">
           <a href="options.html" class="btn" target="_blank" rel="noreferrer">⚙ 设置</a>
         </div>
@@ -21,10 +21,12 @@
       <!-- Todoist -->
       <section class="card">
         <header class="card-head">
+          <span class="bar sky"></span>
           <h2>今日待办</h2>
+          <span class="grow"></span>
           <button id="todo-refresh" class="icon-btn" title="刷新">↻</button>
         </header>
-        <div id="todo-body" class="card-body">
+        <div id="todo-body">
           <p class="muted small">加载中…</p>
         </div>
       </section>
@@ -32,10 +34,12 @@
       <!-- Bilibili favourites -->
       <section class="card wide">
         <header class="card-head">
+          <span class="bar pink"></span>
           <h2>B站收藏夹</h2>
+          <span class="grow"></span>
           <span id="bili-user" class="muted small"></span>
         </header>
-        <div id="bili-body" class="card-body">
+        <div id="bili-body">
           <p class="muted small">加载中…</p>
         </div>
       </section>
@@ -43,10 +47,12 @@
       <!-- GitHub stars -->
       <section class="card wide">
         <header class="card-head">
+          <span class="bar amber"></span>
           <h2>GitHub Star</h2>
+          <span class="grow"></span>
           <span id="gh-user" class="muted small"></span>
         </header>
-        <div id="gh-body" class="card-body">
+        <div id="gh-body">
           <p class="muted small">加载中…</p>
         </div>
       </section>
