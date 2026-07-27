@@ -141,48 +141,66 @@ async function loadTodos(token) {
   }
 }
 
-// ---------- GitHub ----------
+// ---------- GitHub star (with categories) ----------
+const gh = { repos: [], cats: [], map: {}, active: "全部", UNCAT: "未分类" };
+function ghSave() { chrome.storage.local.set({ ghCats: gh.cats, ghMap: gh.map }); }
 async function loadGitHub(user, token) {
   const body = $("gh-body");
   const headers = { Accept: "application/vnd.github+json" };
   let url;
-  if (token) {
-    headers.Authorization = "Bearer " + token;
-    url = "https://api.github.com/user/starred?per_page=24";
-    if (user) $("gh-user").textContent = user;
-  } else if (user) {
-    url = `https://api.github.com/users/${encodeURIComponent(user)}/starred?per_page=24`;
-    $("gh-user").textContent = user;
-  } else {
-    body.innerHTML = `<p class="notice">未配置 GitHub。到 <a href="options.html" target="_blank">设置</a> 填用户名（可选 Token）。</p>`;
-    return;
-  }
+  if (token) { headers.Authorization = "Bearer " + token; url = "https://api.github.com/user/starred?per_page=100"; if (user) $("gh-user").textContent = user; }
+  else if (user) { url = `https://api.github.com/users/${encodeURIComponent(user)}/starred?per_page=100`; $("gh-user").textContent = user; }
+  else { body.innerHTML = `<p class="notice">未配置 GitHub。到 <a href="options.html" target="_blank">设置</a> 填用户名（可选 Token）。</p>`; return; }
   body.innerHTML = `<p class="muted small">加载中…</p>`;
+  const stored = await new Promise((r) => chrome.storage.local.get(["ghCats", "ghMap"], r));
+  gh.cats = stored.ghCats || []; gh.map = stored.ghMap || {};
   try {
     const r = await fetch(url, { headers });
     if (!r.ok) throw new Error();
-    const repos = await r.json();
-    if (!repos.length) {
-      body.innerHTML = `<p class="muted small">没有 star。</p>`;
-      return;
-    }
-    const grid = el("div", "repos");
-    repos.forEach((rp) => {
-      const a = el("a", "repo");
-      a.href = rp.html_url;
-      a.target = "_blank";
-      a.rel = "noreferrer";
-      a.innerHTML =
-        `<div class="name"><span class="owner">${esc(rp.owner?.login)}/</span>${esc(rp.name)}</div>` +
-        (rp.description ? `<p class="desc">${esc(rp.description)}</p>` : "") +
-        `<div class="meta">${rp.language ? `<span>${esc(rp.language)}</span>` : ""}<span>★ ${rp.stargazers_count ?? 0}</span></div>`;
-      grid.appendChild(a);
-    });
-    body.innerHTML = "";
-    body.appendChild(grid);
+    gh.repos = await r.json();
+    renderGh();
   } catch {
     body.innerHTML = `<p class="notice">GitHub 加载失败（频率限制或 Token 无效）。</p>`;
   }
+}
+function renderGh() {
+  const body = $("gh-body");
+  body.innerHTML = "";
+  // tabs
+  const tabs = el("div", "gh-tabs");
+  const counts = { 全部: gh.repos.length, [gh.UNCAT]: 0 };
+  gh.cats.forEach((c) => (counts[c] = 0));
+  gh.repos.forEach((rp) => { const c = gh.map[rp.full_name]; if (c && gh.cats.includes(c)) counts[c]++; else counts[gh.UNCAT]++; });
+  ["全部", gh.UNCAT, ...gh.cats].forEach((t) => {
+    const b = el("button", "gh-tab" + (gh.active === t ? " on" : ""), `${t} <span class="dim">${counts[t] || 0}</span>${t !== "全部" && t !== gh.UNCAT ? ' <span class="x">✕</span>' : ""}`);
+    b.addEventListener("click", (e) => {
+      if (e.target.classList.contains("x")) { gh.cats = gh.cats.filter((c) => c !== t); for (const k in gh.map) if (gh.map[k] === t) delete gh.map[k]; if (gh.active === t) gh.active = "全部"; ghSave(); renderGh(); return; }
+      gh.active = t; renderGh();
+    });
+    tabs.appendChild(b);
+  });
+  const addBtn = el("button", "gh-tab dash", "＋ 新建分类");
+  addBtn.addEventListener("click", () => {
+    const n = prompt("分类名称");
+    if (n && n.trim() && !gh.cats.includes(n.trim()) && n.trim() !== gh.UNCAT) { gh.cats.push(n.trim()); gh.active = n.trim(); ghSave(); renderGh(); }
+  });
+  tabs.appendChild(addBtn);
+  body.appendChild(tabs);
+  // list
+  const shown = gh.active === "全部" ? gh.repos : gh.active === gh.UNCAT ? gh.repos.filter((rp) => !gh.map[rp.full_name] || !gh.cats.includes(gh.map[rp.full_name])) : gh.repos.filter((rp) => gh.map[rp.full_name] === gh.active);
+  if (!shown.length) { body.appendChild(el("p", "muted small", "这个分类下没有仓库。")); return; }
+  const grid = el("div", "repos");
+  shown.forEach((rp) => {
+    const card = el("div", "repo");
+    const cur = gh.map[rp.full_name] && gh.cats.includes(gh.map[rp.full_name]) ? gh.map[rp.full_name] : "";
+    card.innerHTML =
+      `<a href="${rp.html_url}" target="_blank" rel="noreferrer" class="name"><span class="owner">${esc(rp.owner?.login)}/</span>${esc(rp.name)}</a>` +
+      (rp.description ? `<p class="desc">${esc(rp.description)}</p>` : "") +
+      `<div class="meta"><span>${rp.language ? esc(rp.language) : ""}</span><span>★ ${(rp.stargazers_count ?? 0).toLocaleString()}</span><select class="gh-sel"><option value="">${gh.UNCAT}</option>${gh.cats.map((c) => `<option value="${esc(c)}"${c === cur ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>`;
+    card.querySelector(".gh-sel").addEventListener("change", (e) => { const v = e.target.value; if (v) gh.map[rp.full_name] = v; else delete gh.map[rp.full_name]; ghSave(); renderGh(); });
+    grid.appendChild(card);
+  });
+  body.appendChild(grid);
 }
 
 // ---------- VPS probe ----------
@@ -400,6 +418,29 @@ async function loadAiHot() {
   }
 }
 
+// ---------- GitHub trending ----------
+async function loadTrending() {
+  const body = $("trend-body");
+  const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  try {
+    const r = await fetch(`https://api.github.com/search/repositories?q=created:>${since}&sort=stars&order=desc&per_page=12`, { headers: { Accept: "application/vnd.github+json" } });
+    if (!r.ok) throw new Error();
+    const j = await r.json();
+    const repos = j.items || [];
+    if (!repos.length) { body.innerHTML = `<p class="muted small">暂无。</p>`; return; }
+    const grid = el("div", "repos");
+    repos.forEach((rp) => {
+      const a = el("a", "repo");
+      a.href = rp.html_url; a.target = "_blank"; a.rel = "noreferrer";
+      a.innerHTML = `<div class="name"><span class="owner">${esc(rp.owner?.login)}/</span>${esc(rp.name)}</div>${rp.description ? `<p class="desc">${esc(rp.description)}</p>` : ""}<div class="meta">${rp.language ? `<span>${esc(rp.language)}</span>` : ""}<span>★ ${(rp.stargazers_count ?? 0).toLocaleString()}</span></div>`;
+      grid.appendChild(a);
+    });
+    body.innerHTML = ""; body.appendChild(grid);
+  } catch {
+    body.innerHTML = `<p class="notice">趋势加载失败（GitHub 频率限制,稍后再试）。</p>`;
+  }
+}
+
 // ---------- theme ----------
 function applyThemeLabel() {
   const dark = document.documentElement.dataset.theme !== "light";
@@ -424,6 +465,7 @@ async function boot() {
   const cfg = await getCfg();
   loadWeather();
   loadAiHot();
+  loadTrending();
   loadTopSites();
   loadBookmarks();
   loadBili();

@@ -13,8 +13,13 @@
     "https://logicweaver.me/*",
     "https://cdn.jsdelivr.net/*",
     "https://api.open-meteo.com/*",
-    "https://aihot.virxact.com/*"
+    "https://aihot.virxact.com/*",
+    "https://monster-siren.hypergryph.com/*",
+    "https://*.hycdn.cn/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-src https://player.bilibili.com;"
+  },
   "options_page": "options.html",
   "action": { "default_title": "新标签页设置" }
 }
