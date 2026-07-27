@@ -10,7 +10,8 @@
     "https://*.bilibili.com/*",
     "https://api.todoist.com/*",
     "https://api.github.com/*",
-    "https://logicweaver.me/*"
+    "https://logicweaver.me/*",
+    "https://cdn.jsdelivr.net/*"
   ],
   "options_page": "options.html",
   "action": { "default_title": "新标签页设置" }

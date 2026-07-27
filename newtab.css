@@ -14,6 +14,29 @@
   --grad-a: #ffffff;
   --grad-b: #a7f3d0;
   --grad-c: #7dd3fc;
+  --aurora1: rgba(16, 185, 129, 0.18);
+  --aurora2: rgba(56, 189, 248, 0.15);
+  --aurora3: rgba(139, 92, 246, 0.15);
+}
+
+html[data-theme="light"] {
+  --background: #eef2f8;
+  --heading: #0f172a;
+  --text: #334155;
+  --muted: #64748b;
+  --dim: #94a3b8;
+  --border: rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.22);
+  --surface: rgba(15, 23, 42, 0.035);
+  --surface-hover: rgba(15, 23, 42, 0.07);
+  --glass: rgba(255, 255, 255, 0.88);
+  --panel: #ffffff;
+  --grad-a: #0f172a;
+  --grad-b: #059669;
+  --grad-c: #0284c7;
+  --aurora1: rgba(16, 185, 129, 0.12);
+  --aurora2: rgba(56, 189, 248, 0.12);
+  --aurora3: rgba(139, 92, 246, 0.10);
 }
 
 * { box-sizing: border-box; }
@@ -25,9 +48,9 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(60rem 60rem at 12% -10%, rgba(16, 185, 129, 0.18), transparent 60%),
-    radial-gradient(50rem 50rem at 100% 0%, rgba(56, 189, 248, 0.15), transparent 55%),
-    radial-gradient(48rem 48rem at 50% 120%, rgba(139, 92, 246, 0.15), transparent 55%),
+    radial-gradient(60rem 60rem at 12% -10%, var(--aurora1), transparent 60%),
+    radial-gradient(50rem 50rem at 100% 0%, var(--aurora2), transparent 55%),
+    radial-gradient(48rem 48rem at 50% 120%, var(--aurora3), transparent 55%),
     var(--background);
   background-attachment: fixed;
 }
@@ -149,6 +172,23 @@ body {
 .hb-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: linear-gradient(135deg, #f97316, #facc15); font-size: 20px; flex: none; }
 .hb-title { display: block; font-size: 13px; font-weight: 600; color: var(--heading); }
 .hb-sub { display: block; margin-top: 3px; }
+
+/* desktop pet */
+#pet-launch { position: fixed; right: 20px; bottom: 20px; z-index: 50; width: 44px; height: 44px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 18px; cursor: pointer; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }
+#pet-launch:hover { border-color: var(--border-strong); }
+#pet-host { position: fixed; right: 16px; bottom: 80px; z-index: 40; width: 180px; height: 220px; cursor: grab; touch-action: none; }
+#pet-host:active { cursor: grabbing; }
+.pet-missing { display: grid; place-items: center; height: 100%; text-align: center; font-size: 12px; color: var(--dim); }
+#pet-picker { position: fixed; inset: 0; z-index: 60; }
+.pet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
+.pet-panel { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 380px; max-width: calc(100vw - 32px); height: 70vh; max-height: 640px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
+.pet-panel header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 600; color: var(--heading); }
+.pet-close { border: 1px solid var(--border); background: var(--surface); color: var(--muted); width: 28px; height: 28px; border-radius: 8px; cursor: pointer; }
+.pet-search { margin: 12px 16px; padding: 9px 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; font-size: 13px; outline: none; }
+.pet-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
+.pet-item { display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; background: none; color: var(--text); border-radius: 8px; cursor: pointer; font-size: 13px; }
+.pet-item:hover { background: var(--surface); }
+.pet-hint { color: var(--muted); font-size: 13px; padding: 16px; text-align: center; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }

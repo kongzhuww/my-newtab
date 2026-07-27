@@ -223,8 +223,24 @@ async function loadVps(url) {
   }
 }
 
+// ---------- theme ----------
+function applyThemeLabel() {
+  const dark = document.documentElement.dataset.theme !== "light";
+  $("theme-toggle").textContent = dark ? "🌙 主题" : "☀️ 主题";
+}
+function initTheme() {
+  applyThemeLabel();
+  $("theme-toggle").addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch {}
+    applyThemeLabel();
+  });
+}
+
 // ---------- boot ----------
 async function boot() {
+  initTheme();
   tick();
   setInterval(tick, 1000);
   const cfg = await getCfg();

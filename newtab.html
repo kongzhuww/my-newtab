@@ -4,7 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>新标签页</title>
+    <script src="theme-init.js"></script>
     <link rel="stylesheet" href="newtab.css" />
+    <link rel="stylesheet" href="vendor/spine-player.css" />
   </head>
   <body>
     <main class="wrap">
@@ -14,6 +16,7 @@
         <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
         <p id="date" class="date"></p>
         <div class="clock-actions">
+          <button id="theme-toggle" class="btn" title="切换主题">🌙 主题</button>
           <a href="options.html" class="btn" target="_blank" rel="noreferrer">⚙ 设置</a>
         </div>
       </section>
@@ -86,5 +89,7 @@
       </section>
     </main>
     <script src="newtab.js"></script>
+    <script src="vendor/spine-player.js"></script>
+    <script src="pet.js"></script>
   </body>
 </html>
