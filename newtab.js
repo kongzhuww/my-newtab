@@ -284,6 +284,7 @@ function hostOf(url) {
 
 const launcherState = { links: [], groupSizes: {}, editing: false, mergingGroup: "" };
 const bookmarkImportState = { items: [], loaded: false };
+const LAUNCHER_DRAG_TYPE = "application/x-newtab-launcher";
 
 function getTopSites() {
   return new Promise((resolve) => {
@@ -322,6 +323,49 @@ function launcherGroupSize(groupName) {
   if (launcherState.groupSizes[groupName] === "small") return "small";
   if (launcherState.groupSizes[groupName] === "large") return "large";
   return groupName === "常用网站" ? "large" : "small";
+}
+
+function uniqueLauncherGroupName(title) {
+  const names = new Set(launcherGroupNames());
+  const base = `${(title || "新").trim().slice(0, 14)}收藏夹`;
+  if (!names.has(base)) return base;
+  let suffix = 2;
+  while (names.has(`${base} ${suffix}`)) suffix += 1;
+  return `${base} ${suffix}`;
+}
+
+function removeUnusedGroupSizes(groupNames) {
+  groupNames.forEach((groupName) => {
+    if (!launcherState.links.some((link) => (link.group || "常用网站") === groupName)) {
+      delete launcherState.groupSizes[groupName];
+    }
+  });
+}
+
+async function stackLauncherLinks(sourceId, targetId) {
+  if (!sourceId || sourceId === targetId) return;
+  const source = launcherState.links.find((link) => link.id === sourceId);
+  const target = launcherState.links.find((link) => link.id === targetId);
+  if (!source || !target) return;
+  const sourceGroup = source.group || "常用网站";
+  const targetGroup = target.group || "常用网站";
+  const targetGroupCount = launcherState.links.filter((link) => (link.group || "常用网站") === targetGroup).length;
+
+  if (sourceGroup !== targetGroup && targetGroup !== "常用网站" && targetGroupCount > 1) {
+    source.group = targetGroup;
+    launcherState.groupSizes[targetGroup] = "large";
+    removeUnusedGroupSizes([sourceGroup]);
+  } else if (sourceGroup !== targetGroup || targetGroup === "常用网站") {
+    const groupName = uniqueLauncherGroupName(target.title);
+    source.group = groupName;
+    target.group = groupName;
+    launcherState.groupSizes[groupName] = "large";
+    removeUnusedGroupSizes([sourceGroup, targetGroup]);
+  } else {
+    return;
+  }
+  await saveLauncherLinks();
+  renderLaunchers();
 }
 
 async function toggleLauncherGroupSize(groupName) {
@@ -391,11 +435,12 @@ async function importLauncherLink(item, groupName) {
 
 function dragHasUrl(event) {
   const types = Array.from(event.dataTransfer?.types || []);
-  return types.includes("application/x-newtab-bookmark") || types.includes("text/uri-list") || types.includes("text/plain");
+  return types.includes(LAUNCHER_DRAG_TYPE) || types.includes("application/x-newtab-bookmark") || types.includes("text/uri-list") || types.includes("text/plain");
 }
 
 function clearDropTargets() {
   document.querySelectorAll(".launcher-group.drop-target").forEach((group) => group.classList.remove("drop-target"));
+  document.querySelectorAll(".launcher-link.merge-target").forEach((link) => link.classList.remove("merge-target"));
 }
 
 function collectBookmarks(node, path, out) {
@@ -432,7 +477,7 @@ function renderBookmarkImports(query = "") {
 
     const row = el("div", "bookmark-import-item");
     row.draggable = true;
-    row.title = "拖到左侧快捷入口分组";
+    row.title = "拖到快捷入口分组";
     const icon = document.createElement("img");
     icon.src = favi(item.url);
     icon.alt = "";
@@ -462,22 +507,32 @@ function renderBookmarkImports(query = "") {
 }
 
 async function openBookmarkPanel() {
+  const panel = $("bookmark-panel");
+  panel.classList.add("open");
+  $("bookmark-handle").setAttribute("aria-expanded", "true");
+  $("bookmark-handle").title = "收起浏览器书签";
+  $("bookmark-handle-icon").textContent = "‹";
   if (!bookmarkImportState.loaded) {
     const tree = await new Promise((resolve) => chrome.bookmarks.getTree(resolve));
     bookmarkImportState.items = collectBookmarks(tree[0] || {}, [], []).sort((a, b) =>
       a.folder.localeCompare(b.folder, "zh") || a.title.localeCompare(b.title, "zh"));
     bookmarkImportState.loaded = true;
   }
-  $("bookmark-panel").hidden = false;
-  document.body.classList.add("bookmark-panel-open");
   renderBookmarkImports($("bookmark-search").value);
   $("bookmark-search").focus();
 }
 
 function closeBookmarkPanel() {
-  $("bookmark-panel").hidden = true;
-  document.body.classList.remove("bookmark-panel-open");
+  $("bookmark-panel").classList.remove("open");
+  $("bookmark-handle").setAttribute("aria-expanded", "false");
+  $("bookmark-handle").title = "展开浏览器书签";
+  $("bookmark-handle-icon").textContent = "📁";
   clearDropTargets();
+}
+
+function toggleBookmarkPanel() {
+  if ($("bookmark-panel").classList.contains("open")) closeBookmarkPanel();
+  else openBookmarkPanel();
 }
 
 function openLauncherEditor(link) {
@@ -536,6 +591,7 @@ function renderLaunchers() {
       const a = el("a", "launcher-link");
       a.href = link.url;
       a.title = link.title + "\n" + link.url;
+      a.draggable = true;
 
       const icon = el("span", "launcher-favicon");
       const fallback = el("span", "launcher-fallback");
@@ -557,14 +613,41 @@ function renderLaunchers() {
         event.preventDefault();
         openLauncherEditor(link);
       });
+      a.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData(LAUNCHER_DRAG_TYPE, link.id);
+        event.dataTransfer.setData("text/uri-list", link.url);
+        a.classList.add("dragging");
+      });
+      a.addEventListener("dragover", (event) => {
+        if (!Array.from(event.dataTransfer?.types || []).includes(LAUNCHER_DRAG_TYPE)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "move";
+        clearDropTargets();
+        a.classList.add("merge-target");
+      });
+      a.addEventListener("dragleave", () => a.classList.remove("merge-target"));
+      a.addEventListener("drop", async (event) => {
+        const sourceId = event.dataTransfer.getData(LAUNCHER_DRAG_TYPE);
+        if (!sourceId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        clearDropTargets();
+        await stackLauncherLinks(sourceId, link.id);
+      });
+      a.addEventListener("dragend", () => {
+        a.classList.remove("dragging");
+        clearDropTargets();
+      });
       items.appendChild(a);
     });
     group.appendChild(groupHead);
     group.appendChild(items);
     group.addEventListener("dragover", (event) => {
-      if (!launcherState.editing || !dragHasUrl(event)) return;
+      if (!dragHasUrl(event)) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
+      event.dataTransfer.dropEffect = Array.from(event.dataTransfer?.types || []).includes(LAUNCHER_DRAG_TYPE) ? "move" : "copy";
       clearDropTargets();
       group.classList.add("drop-target");
     });
@@ -572,9 +655,14 @@ function renderLaunchers() {
       if (!group.contains(event.relatedTarget)) group.classList.remove("drop-target");
     });
     group.addEventListener("drop", async (event) => {
-      if (!launcherState.editing) return;
       event.preventDefault();
       clearDropTargets();
+      const sourceId = event.dataTransfer.getData(LAUNCHER_DRAG_TYPE);
+      if (sourceId) {
+        const source = launcherState.links.find((link) => link.id === sourceId);
+        if (source) await importLauncherLink(source, groupName);
+        return;
+      }
       let item;
       const packed = event.dataTransfer.getData("application/x-newtab-bookmark");
       if (packed) {
@@ -627,10 +715,10 @@ async function initLaunchers() {
     launcherState.editing = !launcherState.editing;
     $("launcher").classList.toggle("editing", launcherState.editing);
     $("launcher-edit").textContent = launcherState.editing ? "完成" : "编辑入口";
-    if (!launcherState.editing) closeBookmarkPanel();
   });
   $("launcher-add").addEventListener("click", () => openLauncherEditor(null));
   $("bookmark-open").addEventListener("click", openBookmarkPanel);
+  $("bookmark-handle").addEventListener("click", toggleBookmarkPanel);
   $("bookmark-close").addEventListener("click", closeBookmarkPanel);
   $("bookmark-search").addEventListener("input", (event) => renderBookmarkImports(event.target.value));
   $("launcher-cancel").addEventListener("click", () => $("launcher-dialog").close());

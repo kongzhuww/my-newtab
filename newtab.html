@@ -57,16 +57,22 @@
       <input id="background-input" type="file" accept="image/*" hidden />
     </section>
 
-    <aside id="bookmark-panel" class="bookmark-panel" hidden aria-label="书签导入">
-      <header>
-        <div>
-          <h2>从书签导入</h2>
-          <p>拖到左侧分组，或点加号导入常用网站</p>
-        </div>
-        <button id="bookmark-close" type="button" title="关闭">✕</button>
-      </header>
-      <input id="bookmark-search" class="bookmark-search" placeholder="搜索书签" autocomplete="off" />
-      <div id="bookmark-import-list" class="bookmark-import-list"></div>
+    <aside id="bookmark-panel" class="bookmark-panel" aria-label="浏览器书签">
+      <section class="bookmark-panel-sheet">
+        <header>
+          <div>
+            <h2>浏览器书签</h2>
+            <p>拖到快捷入口分组，或点加号加入常用网站</p>
+          </div>
+          <button id="bookmark-close" type="button" title="收起">✕</button>
+        </header>
+        <input id="bookmark-search" class="bookmark-search" placeholder="搜索书签" autocomplete="off" />
+        <div id="bookmark-import-list" class="bookmark-import-list"></div>
+      </section>
+      <button id="bookmark-handle" class="bookmark-handle" type="button" aria-expanded="false" title="展开浏览器书签">
+        <span id="bookmark-handle-icon">📁</span>
+        <span>书签</span>
+      </button>
     </aside>
 
     <dialog id="launcher-dialog" class="launcher-dialog">
