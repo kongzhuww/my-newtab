@@ -123,7 +123,7 @@ async function loadBili() {
 async function loadTodos(token) {
   const body = $("todo-body");
   if (!token) {
-    body.innerHTML = `<p class="notice">未配置 Todoist。到 <a href="options.html" target="_blank">设置</a> 填入 API Token。</p>`;
+    body.innerHTML = `<p class="notice">未配置 Todoist。到 <a href="options.html">设置</a> 填入 API Token。</p>`;
     return;
   }
   body.innerHTML = `<p class="muted small">加载中…</p>`;
@@ -178,7 +178,7 @@ async function loadGitHub(user, token) {
   let url;
   if (token) { headers.Authorization = "Bearer " + token; url = "https://api.github.com/user/starred?per_page=100"; if (user) $("gh-user").textContent = user; }
   else if (user) { url = `https://api.github.com/users/${encodeURIComponent(user)}/starred?per_page=100`; $("gh-user").textContent = user; }
-  else { body.innerHTML = `<p class="notice">未配置 GitHub。到 <a href="options.html" target="_blank">设置</a> 填用户名（可选 Token）。</p>`; return; }
+  else { body.innerHTML = `<p class="notice">未配置 GitHub。到 <a href="options.html">设置</a> 填用户名（可选 Token）。</p>`; return; }
   body.innerHTML = `<p class="muted small">加载中…</p>`;
   const stored = await new Promise((r) => chrome.storage.local.get(["ghCats", "ghMap"], r));
   gh.cats = stored.ghCats || []; gh.map = stored.ghMap || {};
@@ -253,7 +253,7 @@ function gauge(label, pct, sub) {
 }
 async function loadVps(url) {
   const body = $("vps-body");
-  if (!url) { body.innerHTML = `<p class="notice">未配置 VPS。到 <a href="options.html" target="_blank">设置</a> 填探针地址（返回 stats JSON 的 HTTPS 接口）。</p>`; return; }
+  if (!url) { body.innerHTML = `<p class="notice">未配置 VPS。到 <a href="options.html">设置</a> 填探针地址（返回 stats JSON 的 HTTPS 接口）。</p>`; return; }
   try {
     const r = await fetch(url, { headers: { Accept: "application/json" } });
     const d = await r.json();
@@ -282,7 +282,7 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
-const launcherState = { links: [], editing: false };
+const launcherState = { links: [], groupSizes: {}, editing: false, mergingGroup: "" };
 const bookmarkImportState = { items: [], loaded: false };
 
 function getTopSites() {
@@ -307,7 +307,65 @@ function setLauncherBackground(value) {
 }
 
 async function saveLauncherLinks() {
-  await storageSet({ quickLinks: launcherState.links, quickLinksReady: true });
+  await storageSet({
+    quickLinks: launcherState.links,
+    quickLinkGroupSizes: launcherState.groupSizes,
+    quickLinksReady: true,
+  });
+}
+
+function launcherGroupNames() {
+  return Array.from(new Set(launcherState.links.map((link) => link.group || "常用网站")));
+}
+
+function launcherGroupSize(groupName) {
+  if (launcherState.groupSizes[groupName] === "small") return "small";
+  if (launcherState.groupSizes[groupName] === "large") return "large";
+  return groupName === "常用网站" ? "large" : "small";
+}
+
+async function toggleLauncherGroupSize(groupName) {
+  launcherState.groupSizes[groupName] = launcherGroupSize(groupName) === "large" ? "small" : "large";
+  await saveLauncherLinks();
+  renderLaunchers();
+}
+
+function openGroupMerge(groupName) {
+  const targets = launcherGroupNames().filter((name) => name !== groupName);
+  if (!targets.length) return;
+  launcherState.mergingGroup = groupName;
+  $("group-merge-copy").textContent = `“${groupName}”中的网站将移入目标收藏夹，重复网址只保留一份。`;
+  const select = $("group-merge-target");
+  select.innerHTML = "";
+  targets.forEach((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  });
+  $("group-merge-dialog").showModal();
+}
+
+async function mergeLauncherGroups(source, target) {
+  if (!source || !target || source === target) return;
+  const urls = new Set();
+  launcherState.links
+    .filter((link) => (link.group || "常用网站") === target)
+    .forEach((link) => {
+      try { urls.add(normalizeWebUrl(link.url)); } catch {}
+    });
+  launcherState.links = launcherState.links.filter((link) => {
+    if ((link.group || "常用网站") !== source) return true;
+    let url = link.url;
+    try { url = normalizeWebUrl(link.url); } catch {}
+    if (urls.has(url)) return false;
+    urls.add(url);
+    link.group = target;
+    return true;
+  });
+  delete launcherState.groupSizes[source];
+  await saveLauncherLinks();
+  renderLaunchers();
 }
 
 async function importLauncherLink(item, groupName) {
@@ -451,9 +509,26 @@ function renderLaunchers() {
   }
 
   groups.forEach((links, groupName) => {
-    const group = el("section", "launcher-group");
+    const group = el("section", `launcher-group size-${launcherGroupSize(groupName)}`);
+    const groupHead = el("header", "launcher-group-head");
     const heading = el("h2");
     heading.textContent = groupName;
+    const groupActions = el("div", "launcher-group-actions");
+    const size = el("button", "launcher-group-action");
+    size.type = "button";
+    size.title = launcherGroupSize(groupName) === "large" ? "改为小收藏夹" : "改为大收藏夹";
+    size.textContent = launcherGroupSize(groupName) === "large" ? "大" : "小";
+    size.addEventListener("click", () => toggleLauncherGroupSize(groupName));
+    const merge = el("button", "launcher-group-action");
+    merge.type = "button";
+    merge.title = "合并到其他收藏夹";
+    merge.textContent = "合并";
+    merge.disabled = groups.size < 2;
+    merge.addEventListener("click", () => openGroupMerge(groupName));
+    groupActions.appendChild(size);
+    groupActions.appendChild(merge);
+    groupHead.appendChild(heading);
+    groupHead.appendChild(groupActions);
     const items = el("div", "launcher-items");
     links.forEach((link) => {
       const a = el("a", "launcher-link");
@@ -482,7 +557,7 @@ function renderLaunchers() {
       });
       items.appendChild(a);
     });
-    group.appendChild(heading);
+    group.appendChild(groupHead);
     group.appendChild(items);
     group.addEventListener("dragover", (event) => {
       if (!launcherState.editing || !dragHasUrl(event)) return;
@@ -526,7 +601,10 @@ async function backgroundDataUrl(file) {
 }
 
 async function initLaunchers() {
-  const stored = await storageGet(["quickLinks", "quickLinksReady", "heroBackground"]);
+  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinksReady", "heroBackground"]);
+  launcherState.groupSizes = stored.quickLinkGroupSizes && typeof stored.quickLinkGroupSizes === "object"
+    ? stored.quickLinkGroupSizes
+    : {};
   if (stored.quickLinksReady) {
     launcherState.links = Array.isArray(stored.quickLinks) ? stored.quickLinks : [];
   } else {
@@ -553,6 +631,13 @@ async function initLaunchers() {
   $("bookmark-close").addEventListener("click", closeBookmarkPanel);
   $("bookmark-search").addEventListener("input", (event) => renderBookmarkImports(event.target.value));
   $("launcher-cancel").addEventListener("click", () => $("launcher-dialog").close());
+  $("group-merge-cancel").addEventListener("click", () => $("group-merge-dialog").close());
+  $("group-merge-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await mergeLauncherGroups(launcherState.mergingGroup, $("group-merge-target").value);
+    launcherState.mergingGroup = "";
+    $("group-merge-dialog").close();
+  });
   $("launcher-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const id = $("launcher-id").value;
@@ -690,7 +775,7 @@ function wxInfo(c) {
 async function loadWeather(city) {
   const body = $("weather-body");
   if (!city) {
-    body.innerHTML = `<p class="notice">未设置城市。到 <a href="options.html" target="_blank">设置</a> 填写城市名（如 武汉 / Tokyo）。</p>`;
+    body.innerHTML = `<p class="notice">未设置城市。到 <a href="options.html">设置</a> 填写城市名（如 武汉 / Tokyo）。</p>`;
     return;
   }
   body.innerHTML = `<p class="muted small">加载中…</p>`;

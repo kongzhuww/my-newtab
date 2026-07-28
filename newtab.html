@@ -14,7 +14,7 @@
       <div class="tb-actions">
         <span id="tb-launchers"></span>
         <button id="theme-toggle" class="tb-btn" title="切换主题">🌙</button>
-        <a href="options.html" class="tb-btn" target="_blank" rel="noreferrer" title="设置">⚙</a>
+        <a href="options.html" class="tb-btn" title="设置">⚙</a>
       </div>
     </header>
 
@@ -80,6 +80,22 @@
           <span class="grow"></span>
           <button id="launcher-cancel" type="button">取消</button>
           <button class="dialog-primary" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="group-merge-dialog" class="launcher-dialog">
+      <form id="group-merge-form">
+        <h2>合并收藏夹</h2>
+        <p id="group-merge-copy" class="dialog-copy"></p>
+        <label>
+          合并到
+          <select id="group-merge-target" required></select>
+        </label>
+        <div class="dialog-actions">
+          <span class="grow"></span>
+          <button id="group-merge-cancel" type="button">取消</button>
+          <button class="dialog-primary" type="submit">合并</button>
         </div>
       </form>
     </dialog>
