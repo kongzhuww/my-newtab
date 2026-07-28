@@ -63,6 +63,8 @@ async function biliJson(url) {
 }
 async function loadBili() {
   const body = $("bili-body");
+  if (!body) return;
+  body.innerHTML = `<p class="muted small">加载中…</p>`;
   try {
     const nav = await biliJson("https://api.bilibili.com/x/web-interface/nav");
     if (!nav?.data?.isLogin) {
@@ -324,6 +326,8 @@ function updateHomeModulePrefs(cfg = {}) {
   const todo = document.querySelector(".launcher-todo");
   if (weather) weather.hidden = !homeModulePrefs.showWeather;
   if (todo) todo.hidden = !homeModulePrefs.showTodo;
+  if (!homeModulePrefs.showWeather && $("weather-body")) $("weather-body").innerHTML = `<p class="muted small">加载中…</p>`;
+  if (!homeModulePrefs.showTodo && $("todo-body")) $("todo-body").innerHTML = `<p class="muted small">加载中…</p>`;
 }
 
 
@@ -1267,6 +1271,28 @@ function initTheme() {
   });
 }
 
+// ---------- home modules ----------
+function applyHomeModules(cfg) {
+  updateHomeModulePrefs(cfg);
+  renderLaunchers();
+  if (homeModulePrefs.showWeather) loadWeather(cfg.city);
+  if (homeModulePrefs.showBili) loadBili();
+  if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);
+}
+
+function watchHomeModuleSettings(cfg) {
+  if (!chrome.storage?.onChanged) return;
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    const watched = ["showWeather", "showSites", "showBili", "showTodo", "city", "todoistToken"];
+    if (!watched.some((key) => key in changes)) return;
+    watched.forEach((key) => {
+      if (key in changes) cfg[key] = changes[key].newValue;
+    });
+    applyHomeModules(cfg);
+  });
+}
+
 // ---------- boot ----------
 async function boot() {
   initTheme();
@@ -1276,17 +1302,16 @@ async function boot() {
   initSearch();
   await initLaunchers();
   const cfg = await getCfg();
-  updateHomeModulePrefs(cfg);
-  renderLaunchers();
-  if (homeModulePrefs.showWeather) loadWeather(cfg.city);
+  applyHomeModules(cfg);
+  watchHomeModuleSettings(cfg);
   loadAiHot();
   loadTrending();
-  if (homeModulePrefs.showBili) loadBili();
   $("aihot-refresh").addEventListener("click", loadAiHot);
-  if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);
   loadGitHub(cfg.ghUser, cfg.ghToken);
   loadVps(cfg.vpsUrl);
   if (cfg.vpsUrl) setInterval(() => loadVps(cfg.vpsUrl), 15000);
-  $("todo-refresh").addEventListener("click", () => loadTodos(cfg.todoistToken));
+  $("todo-refresh").addEventListener("click", () => {
+    if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);
+  });
 }
 boot();
