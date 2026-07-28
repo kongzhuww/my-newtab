@@ -1,14 +1,23 @@
 "use strict";
 
-const keys = ["todoistToken", "ghUser", "ghToken", "vpsUrl", "city"];
+const keys = ["todoistToken", "ghUser", "ghToken", "vpsUrl", "city", "showWeather", "showSites", "showBili", "showTodo"];
+const toggleKeys = ["showWeather", "showSites", "showBili", "showTodo"];
 
 chrome.storage.local.get(keys, (cfg) => {
-  for (const k of keys) if (cfg[k]) document.getElementById(k).value = cfg[k];
+  for (const k of keys) {
+    const input = document.getElementById(k);
+    if (!input) continue;
+    if (toggleKeys.includes(k)) input.checked = cfg[k] !== false;
+    else if (cfg[k]) input.value = cfg[k];
+  }
 });
 
 function saveSettings(returnToNewtab) {
   const data = {};
-  for (const k of keys) data[k] = document.getElementById(k).value.trim();
+  for (const k of keys) {
+    const input = document.getElementById(k);
+    data[k] = toggleKeys.includes(k) ? input.checked : input.value.trim();
+  }
   chrome.storage.local.set(data, () => {
     const s = document.getElementById("saved");
     if (chrome.runtime.lastError) {

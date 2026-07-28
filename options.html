@@ -22,6 +22,10 @@
       #saved.error { color: #fb7185; }
       .back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 22px; color: var(--muted); font-size: 13px; text-decoration: none; }
       .back:hover { color: var(--heading); }
+      .module-toggles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+      .toggle-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+      .toggle-card span { font-size: 13px; color: var(--text); }
+      .toggle-card input { width: 18px; height: 18px; accent-color: #34d399; }
     </style>
   </head>
   <body>
@@ -32,6 +36,18 @@
         <button id="save-return" class="save" type="button">保存并返回</button>
       </div>
       <p class="muted small">B站收藏夹用你浏览器里的登录态,无需在这里填。所有配置只存本地。</p>
+
+
+      <div class="field">
+        <label>首页模块显示</label>
+        <div class="module-toggles">
+          <label class="toggle-card"><span>天气模块</span><input id="showWeather" type="checkbox" /></label>
+          <label class="toggle-card"><span>常用网站</span><input id="showSites" type="checkbox" /></label>
+          <label class="toggle-card"><span>B站收藏夹</span><input id="showBili" type="checkbox" /></label>
+          <label class="toggle-card"><span>今日待办</span><input id="showTodo" type="checkbox" /></label>
+        </div>
+        <p class="hint">关闭后首页会隐藏对应模块，并跳过该模块的数据加载。</p>
+      </div>
 
       <div class="field">
         <label>城市（天气）</label>

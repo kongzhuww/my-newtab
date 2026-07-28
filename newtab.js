@@ -21,7 +21,7 @@ function storageRemove(keys) {
   });
 }
 function getCfg() {
-  return storageGet(["todoistToken", "ghUser", "ghToken", "vpsUrl", "city"]);
+  return storageGet(["todoistToken", "ghUser", "ghToken", "vpsUrl", "city", "showWeather", "showSites", "showBili", "showTodo"]);
 }
 
 // ---------- helpers ----------
@@ -307,8 +307,23 @@ function cloneLeaftabDefaultLinks() {
 }
 
 const launcherState = { links: [], groupSizes: {}, editing: false, mergingGroup: "", activeFolder: "", folderMenuGroup: "" };
+const homeModulePrefs = { showWeather: true, showSites: true, showBili: true, showTodo: true };
 const bookmarkImportState = { items: [], tree: null, loaded: false };
 const LAUNCHER_DRAG_TYPE = "application/x-newtab-launcher";
+
+function updateHomeModulePrefs(cfg = {}) {
+  homeModulePrefs.showWeather = cfg.showWeather !== false;
+  homeModulePrefs.showSites = cfg.showSites !== false;
+  homeModulePrefs.showBili = cfg.showBili !== false;
+  homeModulePrefs.showTodo = cfg.showTodo !== false;
+  const weather = document.querySelector(".launcher-weather");
+  const todo = document.querySelector(".launcher-todo");
+  const bili = $("launcher-bili");
+  if (weather) weather.hidden = !homeModulePrefs.showWeather;
+  if (todo) todo.hidden = !homeModulePrefs.showTodo;
+  if (bili) bili.hidden = !homeModulePrefs.showBili;
+}
+
 
 function getTopSites() {
   return new Promise((resolve) => {
@@ -935,7 +950,8 @@ async function chooseBackgroundFile() {
 }
 
 async function initLaunchers() {
-  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinkFolderTilesReady", "quickLinksReady", "heroBackground", "leaftabBackup20260728Migrated"]);
+  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinkFolderTilesReady", "quickLinksReady", "heroBackground", "leaftabBackup20260728Migrated", "showWeather", "showSites", "showBili", "showTodo"]);
+  updateHomeModulePrefs(stored);
   launcherState.groupSizes = stored.quickLinkGroupSizes && typeof stored.quickLinkGroupSizes === "object"
     ? stored.quickLinkGroupSizes
     : {};
@@ -1244,12 +1260,14 @@ async function boot() {
   initSearch();
   await initLaunchers();
   const cfg = await getCfg();
-  loadWeather(cfg.city);
+  updateHomeModulePrefs(cfg);
+  renderLaunchers();
+  if (homeModulePrefs.showWeather) loadWeather(cfg.city);
   loadAiHot();
   loadTrending();
-  loadBili();
+  if (homeModulePrefs.showBili) loadBili();
   $("aihot-refresh").addEventListener("click", loadAiHot);
-  loadTodos(cfg.todoistToken);
+  if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);
   loadGitHub(cfg.ghUser, cfg.ghToken);
   loadVps(cfg.vpsUrl);
   if (cfg.vpsUrl) setInterval(() => loadVps(cfg.vpsUrl), 15000);
