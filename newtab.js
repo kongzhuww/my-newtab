@@ -351,11 +351,16 @@ function normalizeWebUrl(value) {
   return parsed.href;
 }
 
-let heroBackgroundUrl = "";
+let heroBackgroundUrls = [];
+
+function trackHeroBackgroundUrl(url) {
+  heroBackgroundUrls.push(url);
+  return url;
+}
 
 function clearHeroBackgroundUrl() {
-  if (heroBackgroundUrl) URL.revokeObjectURL(heroBackgroundUrl);
-  heroBackgroundUrl = "";
+  heroBackgroundUrls.forEach((url) => URL.revokeObjectURL(url));
+  heroBackgroundUrls = [];
 }
 
 function openBackgroundDb() {
@@ -367,11 +372,11 @@ function openBackgroundDb() {
   });
 }
 
-async function backgroundDbPut(file) {
+async function backgroundDbPut(value) {
   const db = await openBackgroundDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("files", "readwrite");
-    tx.objectStore("files").put(file, "hero");
+    tx.objectStore("files").put(value, "hero");
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
@@ -411,13 +416,18 @@ async function setLauncherBackground(value) {
     launcher.style.setProperty("--launcher-image", `url(${JSON.stringify(value)})`);
     return;
   }
+  if (value.type === "web") {
+    const pack = await backgroundDbGet();
+    if (pack?.type === "web") await mountWebWallpaper(pack, host);
+    return;
+  }
   if (value.type === "db") {
     const file = await backgroundDbGet();
     if (!file) return;
-    heroBackgroundUrl = URL.createObjectURL(file);
+    const url = trackHeroBackgroundUrl(URL.createObjectURL(file));
     if (/^video\//i.test(file.type || "") || /\.(mp4|webm)$/i.test(file.name || "")) {
       const video = document.createElement("video");
-      video.src = heroBackgroundUrl;
+      video.src = url;
       video.autoplay = true;
       video.loop = true;
       video.muted = true;
@@ -425,7 +435,7 @@ async function setLauncherBackground(value) {
       host.appendChild(video);
     } else {
       const image = document.createElement("img");
-      image.src = heroBackgroundUrl;
+      image.src = url;
       image.alt = "";
       host.appendChild(image);
     }
@@ -938,31 +948,133 @@ function isStaticImage(file) {
   return file && /^image\//i.test(file.type || "") && /\.(png|jpe?g|webp)$/i.test(file.name || "");
 }
 
-async function pickWallpaperMediaFromDirectory(handle) {
+const WALLPAPER_MAX_FILES = 450;
+const WALLPAPER_MAX_BYTES = 180 * 1024 * 1024;
+
+function normalizeWallpaperPath(path) {
+  return String(path || "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+}
+
+function resolveWallpaperPath(fromPath, target) {
+  const raw = String(target || "").trim().replace(/^['"]|['"]$/g, "");
+  if (!raw || /^(?:[a-z][a-z0-9+.-]*:|#|data:|blob:)/i.test(raw)) return "";
+  const [pathname] = raw.split(/[?#]/);
+  if (!pathname) return "";
+  const base = raw.startsWith("/") ? "" : normalizeWallpaperPath(fromPath).split("/").slice(0, -1).join("/");
+  const parts = `${base ? base + "/" : ""}${pathname.replace(/^\/+/, "")}`.split("/");
+  const stack = [];
+  parts.forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") stack.pop();
+    else stack.push(part);
+  });
+  return stack.join("/").toLowerCase();
+}
+
+async function collectWallpaperFiles(handle) {
   const files = [];
-  async function walk(dir, depth = 0) {
-    if (depth > 2) return;
+  let total = 0;
+  async function walk(dir, prefix = "", depth = 0) {
+    if (depth > 4 || files.length >= WALLPAPER_MAX_FILES || total >= WALLPAPER_MAX_BYTES) return;
     for await (const entry of dir.values()) {
+      const path = normalizeWallpaperPath(prefix ? `${prefix}/${entry.name}` : entry.name);
       if (entry.kind === "file") {
         const file = await entry.getFile();
-        if (isBackgroundMedia(file)) files.push(file);
+        total += file.size || 0;
+        if (total <= WALLPAPER_MAX_BYTES) files.push({ path, file });
       } else if (entry.kind === "directory") {
-        await walk(entry, depth + 1);
+        await walk(entry, path, depth + 1);
       }
     }
   }
   await walk(handle);
+  return files;
+}
+
+function findWebWallpaperEntry(entries) {
+  return entries
+    .filter((entry) => /(^|\/)index\.html?$/i.test(entry.path) || /\.html?$/i.test(entry.path))
+    .sort((a, b) => {
+      const score = (entry) => /^index\.html?$/i.test(entry.path) ? 0 : /(^|\/)index\.html?$/i.test(entry.path) ? 1 : 2;
+      return score(a) - score(b) || a.path.length - b.path.length;
+    })[0] || null;
+}
+
+function collectProjectMediaRefs(value, refs = []) {
+  if (typeof value === "string") {
+    if (/\.(png|jpe?g|webp|gif|mp4|webm|html?)($|[?#])/i.test(value)) refs.push(value);
+  } else if (Array.isArray(value)) {
+    value.forEach((item) => collectProjectMediaRefs(item, refs));
+  } else if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => collectProjectMediaRefs(item, refs));
+  }
+  return refs;
+}
+
+async function pickProjectReferencedMedia(entries) {
+  const map = new Map(entries.map((entry) => [normalizeWallpaperPath(entry.path).toLowerCase(), entry]));
+  const projects = entries.filter((entry) => /(^|\/)project\.json$/i.test(entry.path));
+  for (const project of projects) {
+    try {
+      const json = JSON.parse(await project.file.text());
+      for (const ref of collectProjectMediaRefs(json)) {
+        const entry = map.get(resolveWallpaperPath(project.path, ref));
+        if (entry && isBackgroundMedia(entry.file)) return entry.file;
+      }
+    } catch { /* ignore malformed third-party metadata */ }
+  }
+  return null;
+}
+
+function getWallpaperMime(path, file) {
+  if (file.type) return file.type;
+  if (/\.html?$/i.test(path)) return "text/html";
+  if (/\.css$/i.test(path)) return "text/css";
+  if (/\.m?js$/i.test(path)) return "text/javascript";
+  if (/\.png$/i.test(path)) return "image/png";
+  if (/\.jpe?g$/i.test(path)) return "image/jpeg";
+  if (/\.webp$/i.test(path)) return "image/webp";
+  if (/\.gif$/i.test(path)) return "image/gif";
+  if (/\.mp4$/i.test(path)) return "video/mp4";
+  if (/\.webm$/i.test(path)) return "video/webm";
+  return "application/octet-stream";
+}
+
+function buildWebWallpaperPack(dirName, entry, entries) {
+  const usable = entries
+    .filter((item) => !/\.(pkg|mpkg)$/i.test(item.path))
+    .map((item) => ({ path: item.path, file: item.file, mime: getWallpaperMime(item.path, item.file) }));
+  return { type: "web", name: dirName || "Web Wallpaper", entry: entry.path, files: usable };
+}
+
+async function pickWallpaperMediaFromDirectory(handle) {
+  const entries = await collectWallpaperFiles(handle);
+  const webEntry = findWebWallpaperEntry(entries);
+  if (webEntry) return buildWebWallpaperPack(handle.name, webEntry, entries);
+
+  const projectMedia = await pickProjectReferencedMedia(entries);
+  if (projectMedia) return projectMedia;
+
+  const files = entries.map((entry) => entry.file).filter(isBackgroundMedia);
   return files.sort((a, b) => {
     const score = (f) => /\.(mp4|webm)$/i.test(f.name) ? 0 : /\.gif$/i.test(f.name) ? 1 : /^preview\./i.test(f.name) ? 2 : /cover|thumb|poster/i.test(f.name) ? 3 : 4;
     return score(a) - score(b) || b.size - a.size;
   })[0] || null;
 }
 
+async function mountWebWallpaper(pack, host) {
+  const iframe = document.createElement("iframe");
+  iframe.title = pack.name || "Web Wallpaper";
+  iframe.src = chrome.runtime.getURL("wallpaper-sandbox.html");
+  iframe.onload = () => iframe.contentWindow?.postMessage(pack, "*");
+  host.appendChild(iframe);
+}
+
 async function chooseBackgroundFile() {
-  if (window.showDirectoryPicker && confirm("要导入 Wallpaper Engine 文件夹吗？\n确定：选择 Wallpaper 文件夹，优先使用 MP4/WebM/GIF。\n取消：选择普通图片/GIF/视频文件。")) {
+  if (window.showDirectoryPicker && confirm("要导入 Wallpaper Engine 文件夹吗？\n确定：选择 Wallpaper 文件夹，支持 Web Wallpaper（index.html），并会优先使用 MP4/WebM/GIF/项目主图。\n取消：选择普通图片/GIF/视频文件。")) {
     const dir = await window.showDirectoryPicker();
     const file = await pickWallpaperMediaFromDirectory(dir);
-    if (!file) throw new Error("未在 Wallpaper 文件夹里找到可用的图片、GIF、MP4 或 WebM。");
+    if (!file) throw new Error("未在 Wallpaper 文件夹里找到可用的 Web Wallpaper、图片、GIF、MP4 或 WebM。");
     return file;
   }
   return new Promise((resolve) => {
@@ -976,7 +1088,7 @@ async function chooseBackgroundFile() {
 }
 
 async function initLaunchers() {
-  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinkFolderTilesReady", "quickLinksReady", "heroBackground", "leaftabBackup20260728Migrated", "showWeather", "showSites", "showBili", "showTodo"]);
+  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinkFolderTilesReady", "quickLinksReady", "heroBackground", "leaftabBackup20260728Migrated", "showWeather", "showSites", "showBili", "showTodo", "showBookmarkPanel"]);
   updateHomeModulePrefs(stored);
   launcherState.groupSizes = stored.quickLinkGroupSizes && typeof stored.quickLinkGroupSizes === "object"
     ? stored.quickLinkGroupSizes
@@ -1082,9 +1194,14 @@ async function initLaunchers() {
     try {
       const file = await chooseBackgroundFile();
       if (!file) return;
-      if (!isBackgroundMedia(file)) { alert("请选择图片、GIF、MP4 或 WebM。"); return; }
       let value;
-      if (isStaticImage(file) && file.size < 6 * 1024 * 1024) {
+      if (file.type === "web") {
+        await backgroundDbPut(file);
+        value = { type: "web", name: file.name, entry: file.entry };
+      } else if (!isBackgroundMedia(file)) {
+        alert("请选择图片、GIF、MP4、WebM 或包含 index.html 的 Web Wallpaper 文件夹。");
+        return;
+      } else if (isStaticImage(file) && file.size < 6 * 1024 * 1024) {
         value = await backgroundDataUrl(file);
         await backgroundDbClear();
       } else {

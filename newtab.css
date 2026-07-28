@@ -134,7 +134,8 @@ body {
   pointer-events: none;
 }
 .hero-background-media img,
-.hero-background-media video {
+.hero-background-media video,
+.hero-background-media iframe {
   width: 100%;
   height: 100%;
   object-fit: cover;
