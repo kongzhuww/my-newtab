@@ -101,7 +101,7 @@ async function loadBili() {
               a.href = m.bvid ? `https://www.bilibili.com/video/${m.bvid}` : m.link || "#";
               a.target = "_blank";
               a.rel = "noreferrer";
-              a.innerHTML = `<img referrerpolicy="no-referrer" src="${esc((m.cover || "").replace(/^http:/, "https:"))}" alt=""><span class="t">${esc(m.title)}</span>`;
+              a.innerHTML = `<img loading="lazy" decoding="async" referrerpolicy="no-referrer" src="${esc((m.cover || "").replace(/^http:/, "https:"))}" alt=""><span class="t">${esc(m.title)}</span>`;
               items.appendChild(a);
             });
           } catch {

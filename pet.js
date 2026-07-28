@@ -13,6 +13,7 @@
   const BASE_W = 160;
   const BASE_H = 200;
   const WALK_SPEED = 0.8;
+  const FRAME_INTERVAL = 1000 / 30;
 
   let models = [];
   let modelsState = "idle";
@@ -23,6 +24,8 @@
   let facing = 1;
   let walking = true;
   let walkFrame = 0;
+  let walkLastFrame = 0;
+  let playerGeneration = 0;
   const drag = { on: false, sx: 0, sy: 0, ox: 0, oy: 0, moved: false };
 
   try {
@@ -87,6 +90,27 @@
   const listEl = picker.querySelector(".pet-list");
   const searchEl = picker.querySelector(".pet-search");
 
+  function limitPlayerFrameRate(instance) {
+    const drawFrame = instance.drawFrame.bind(instance);
+    let lastDraw = -FRAME_INTERVAL;
+    instance.drawFrame = function (requestNextFrame = true) {
+      if (requestNextFrame && !this.stopRequestAnimationFrame) {
+        requestAnimationFrame(() => this.drawFrame());
+      }
+      const now = performance.now();
+      if (requestNextFrame && now - lastDraw < FRAME_INTERVAL) return;
+      lastDraw = now;
+      drawFrame(false);
+    };
+  }
+
+  function stopPlayer() {
+    playerGeneration += 1;
+    try { player?.stopRendering?.(); } catch {}
+    player = null;
+    stage.replaceChildren();
+  }
+
   function updateTransform() {
     stage.style.transform = `scale(${scale}) scaleX(${facing})`;
   }
@@ -140,6 +164,7 @@
   function stopWalking(resetAnimation = true) {
     cancelAnimationFrame(walkFrame);
     walkFrame = 0;
+    walkLastFrame = 0;
     if (resetAnimation) setBase("idle");
   }
 
@@ -150,11 +175,17 @@
     let x = Number.parseFloat(host.style.left);
     if (!Number.isFinite(x)) x = innerWidth - 220;
     let direction = facing;
-    const step = () => {
+    const step = (timestamp) => {
+      if (walkLastFrame && timestamp - walkLastFrame < FRAME_INTERVAL) {
+        walkFrame = requestAnimationFrame(step);
+        return;
+      }
+      const elapsed = walkLastFrame ? Math.min(100, timestamp - walkLastFrame) : 1000 / 60;
+      walkLastFrame = timestamp;
       const width = Math.round(BASE_W * scale);
       const maxX = Math.max(0, innerWidth - width);
       const floorY = Math.max(0, innerHeight - Math.round(BASE_H * scale) - 8);
-      x += direction * WALK_SPEED;
+      x += direction * WALK_SPEED * elapsed / (1000 / 60);
       if (x <= 0) {
         x = 0;
         direction = 1;
@@ -273,14 +304,13 @@
     updateTransform();
     stopWalking(false);
     statusEl.textContent = "加载中…";
+    stopPlayer();
     if (!window.spine?.SpinePlayer) {
-      stage.innerHTML = "";
       statusEl.textContent = "缺少 Spine 运行时";
       return;
     }
-    try { player?.dispose?.(); } catch {}
-    stage.innerHTML = "";
-    player = new window.spine.SpinePlayer(stage, {
+    const generation = playerGeneration;
+    const nextPlayer = new window.spine.SpinePlayer(stage, {
       skelUrl: model.skel,
       atlasUrl: model.atlas,
       premultipliedAlpha: true,
@@ -289,6 +319,10 @@
       showControls: false,
       showLoading: false,
       success: (loadedPlayer) => {
+        if (generation !== playerGeneration || player !== loadedPlayer) {
+          loadedPlayer.stopRendering?.();
+          return;
+        }
         player = loadedPlayer;
         try {
           baseAnim = availableAnimation(IDLE) || baseAnim;
@@ -299,8 +333,12 @@
           statusEl.textContent = "加载失败";
         }
       },
-      error: () => { statusEl.textContent = "加载失败"; },
+      error: () => {
+        if (generation === playerGeneration) statusEl.textContent = "加载失败";
+      },
     });
+    player = nextPlayer;
+    limitPlayerFrameRate(nextPlayer);
   }
 
   function dismiss() {
@@ -309,10 +347,8 @@
     walking = false;
     try { localStorage.setItem(WALK_KEY, "0"); } catch {}
     try { localStorage.removeItem(CUR_KEY); } catch {}
-    try { player?.dispose?.(); } catch {}
-    player = null;
+    stopPlayer();
     current = null;
-    stage.innerHTML = "";
     host.style.display = "none";
     launcher.style.display = "grid";
   }
