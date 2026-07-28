@@ -906,8 +906,8 @@ function renderLaunchers() {
   common.appendChild(head);
   common.appendChild(items);
   makeLauncherDropTarget(common, "常用网站");
-  body.appendChild(common);
-  body.appendChild(bili);
+  if (homeModulePrefs.showSites) body.appendChild(common);
+  if (homeModulePrefs.showBili) body.appendChild(createBiliLauncherCard());
 
   if ($("launcher-folder-dialog").open && launcherState.activeFolder) {
     renderLauncherFolderDialog();

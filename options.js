@@ -41,3 +41,9 @@ document.getElementById("options-form").addEventListener("submit", (event) => {
 });
 
 document.getElementById("save-return").addEventListener("click", () => saveSettings(true));
+
+
+toggleKeys.forEach((key) => {
+  const input = document.getElementById(key);
+  if (input) input.addEventListener("change", () => saveSettings(false));
+});
