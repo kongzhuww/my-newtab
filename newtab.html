@@ -116,6 +116,23 @@
       </form>
     </dialog>
 
+    <div id="folder-menu-backdrop" class="folder-menu-backdrop" hidden></div>
+    <div id="folder-menu" class="folder-menu" role="menu" hidden>
+      <p id="folder-menu-title"></p>
+      <button id="folder-menu-size" type="button"></button>
+      <button id="folder-menu-merge" type="button">合并到其他收藏夹</button>
+    </div>
+
+    <dialog id="launcher-folder-dialog" class="launcher-dialog launcher-folder-dialog">
+      <div class="launcher-folder-dialog-shell">
+        <header>
+          <h2 id="launcher-folder-dialog-title"></h2>
+          <button id="launcher-folder-close" type="button" title="关闭">✕</button>
+        </header>
+        <div id="launcher-folder-dialog-items" class="launcher-folder-dialog-items"></div>
+      </div>
+    </dialog>
+
     <main class="wrap">
       <!-- Todoist -->
       <section class="card">

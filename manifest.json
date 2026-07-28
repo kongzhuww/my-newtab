@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LogicWeaver 新标签页",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "个人新标签页仪表盘：时钟、B站收藏夹、Todoist 待办、GitHub Star、VPS 探针、小黑盒。",
   "chrome_url_overrides": { "newtab": "newtab.html" },
   "permissions": ["storage", "topSites", "bookmarks", "favicon"],

@@ -282,7 +282,7 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
-const launcherState = { links: [], groupSizes: {}, editing: false, mergingGroup: "" };
+const launcherState = { links: [], groupSizes: {}, editing: false, mergingGroup: "", activeFolder: "", folderMenuGroup: "" };
 const bookmarkImportState = { items: [], loaded: false };
 const LAUNCHER_DRAG_TYPE = "application/x-newtab-launcher";
 
@@ -359,7 +359,7 @@ async function stackLauncherLinks(sourceId, targetId) {
     const groupName = uniqueLauncherGroupName(target.title);
     source.group = groupName;
     target.group = groupName;
-    launcherState.groupSizes[groupName] = "large";
+    launcherState.groupSizes[groupName] = "small";
     removeUnusedGroupSizes([sourceGroup, targetGroup]);
   } else {
     return;
@@ -439,7 +439,7 @@ function dragHasUrl(event) {
 }
 
 function clearDropTargets() {
-  document.querySelectorAll(".launcher-group.drop-target").forEach((group) => group.classList.remove("drop-target"));
+  document.querySelectorAll(".drop-target").forEach((target) => target.classList.remove("drop-target"));
   document.querySelectorAll(".launcher-link.merge-target").forEach((link) => link.classList.remove("merge-target"));
 }
 
@@ -546,138 +546,209 @@ function openLauncherEditor(link) {
   $("launcher-title").focus();
 }
 
+function createLauncherIcon(link, className = "launcher-favicon") {
+  const icon = el("span", className);
+  const fallback = el("span", "launcher-fallback");
+  fallback.textContent = (link.title || hostOf(link.url)).trim().slice(0, 1).toUpperCase();
+  const img = document.createElement("img");
+  img.src = favi(link.url);
+  img.alt = "";
+  img.addEventListener("load", () => (fallback.style.display = "none"));
+  img.addEventListener("error", () => (img.style.display = "none"));
+  icon.appendChild(fallback);
+  icon.appendChild(img);
+  return icon;
+}
+
+function createLauncherLink(link, closeFolderOnEdit = false) {
+  const anchor = el("a", "launcher-link");
+  anchor.href = link.url;
+  anchor.title = link.title + "\n" + link.url;
+  anchor.draggable = true;
+  const label = el("span", "launcher-label");
+  label.textContent = link.title;
+  anchor.appendChild(createLauncherIcon(link));
+  anchor.appendChild(label);
+  anchor.addEventListener("click", (event) => {
+    if (!launcherState.editing) return;
+    event.preventDefault();
+    if (closeFolderOnEdit) $("launcher-folder-dialog").close();
+    openLauncherEditor(link);
+  });
+  anchor.addEventListener("dragstart", (event) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(LAUNCHER_DRAG_TYPE, link.id);
+    event.dataTransfer.setData("text/uri-list", link.url);
+    anchor.classList.add("dragging");
+  });
+  anchor.addEventListener("dragover", (event) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes(LAUNCHER_DRAG_TYPE)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    clearDropTargets();
+    anchor.classList.add("merge-target");
+  });
+  anchor.addEventListener("dragleave", () => anchor.classList.remove("merge-target"));
+  anchor.addEventListener("drop", async (event) => {
+    const sourceId = event.dataTransfer.getData(LAUNCHER_DRAG_TYPE);
+    if (!sourceId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearDropTargets();
+    await stackLauncherLinks(sourceId, link.id);
+  });
+  anchor.addEventListener("dragend", () => {
+    anchor.classList.remove("dragging");
+    clearDropTargets();
+  });
+  return anchor;
+}
+
+async function importDroppedLauncherItem(event, groupName) {
+  const sourceId = event.dataTransfer.getData(LAUNCHER_DRAG_TYPE);
+  if (sourceId) {
+    const source = launcherState.links.find((link) => link.id === sourceId);
+    if (source) await importLauncherLink(source, groupName);
+    return;
+  }
+  let item;
+  const packed = event.dataTransfer.getData("application/x-newtab-bookmark");
+  if (packed) {
+    try { item = JSON.parse(packed); } catch {}
+  }
+  if (!item) {
+    const uri = event.dataTransfer.getData("text/uri-list").split(/\r?\n/).find((line) => line && !line.startsWith("#"));
+    const text = uri || event.dataTransfer.getData("text/plain");
+    if (text) item = { title: hostOf(text.trim()), url: text.trim() };
+  }
+  if (item) await importLauncherLink(item, groupName);
+}
+
+function makeLauncherDropTarget(target, groupName) {
+  target.addEventListener("dragover", (event) => {
+    if (!dragHasUrl(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = Array.from(event.dataTransfer?.types || []).includes(LAUNCHER_DRAG_TYPE) ? "move" : "copy";
+    clearDropTargets();
+    target.classList.add("drop-target");
+  });
+  target.addEventListener("dragleave", (event) => {
+    if (!target.contains(event.relatedTarget)) target.classList.remove("drop-target");
+  });
+  target.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearDropTargets();
+    await importDroppedLauncherItem(event, groupName);
+  });
+}
+
+function renderLauncherFolderDialog(groupName = launcherState.activeFolder) {
+  launcherState.activeFolder = groupName;
+  $("launcher-folder-dialog-title").textContent = groupName;
+  const body = $("launcher-folder-dialog-items");
+  body.innerHTML = "";
+  launcherState.links
+    .filter((link) => (link.group || "常用网站") === groupName)
+    .forEach((link) => body.appendChild(createLauncherLink(link, true)));
+}
+
+function openLauncherFolder(groupName) {
+  renderLauncherFolderDialog(groupName);
+  $("launcher-folder-dialog").showModal();
+}
+
+function closeFolderMenu() {
+  $("folder-menu").hidden = true;
+  $("folder-menu-backdrop").hidden = true;
+  launcherState.folderMenuGroup = "";
+}
+
+function openFolderMenu(groupName, event) {
+  event.preventDefault();
+  closeFolderMenu();
+  launcherState.folderMenuGroup = groupName;
+  const menu = $("folder-menu");
+  $("folder-menu-title").textContent = groupName;
+  $("folder-menu-size").textContent = launcherGroupSize(groupName) === "small" ? "扩大为大收藏夹" : "缩小为小收藏夹";
+  $("folder-menu-merge").disabled = launcherGroupNames().filter((name) => name !== "常用网站").length < 2;
+  $("folder-menu-backdrop").hidden = false;
+  menu.hidden = false;
+  menu.style.left = Math.max(8, Math.min(innerWidth - menu.offsetWidth - 8, event.clientX)) + "px";
+  menu.style.top = Math.max(8, Math.min(innerHeight - menu.offsetHeight - 8, event.clientY)) + "px";
+}
+
+function createLauncherFolder(groupName, links) {
+  const size = launcherGroupSize(groupName);
+  const folder = el("div", `launcher-folder size-${size}`);
+  folder.title = `${groupName}\n右键调整收藏夹大小`;
+  const preview = el("button", "launcher-folder-preview");
+  preview.type = "button";
+  preview.title = `打开${groupName}`;
+  const capacity = size === "large" ? 9 : 4;
+  const visibleCount = links.length > capacity ? capacity - 1 : capacity;
+  links.slice(0, visibleCount).forEach((link) => {
+    preview.appendChild(createLauncherIcon(link, "launcher-folder-mini"));
+  });
+  if (links.length > capacity) {
+    const more = el("span", "launcher-folder-more");
+    more.textContent = `+${links.length - visibleCount}`;
+    preview.appendChild(more);
+  }
+  const label = el("span", "launcher-folder-label");
+  label.textContent = groupName;
+  preview.addEventListener("click", () => openLauncherFolder(groupName));
+  folder.addEventListener("contextmenu", (event) => openFolderMenu(groupName, event));
+  folder.appendChild(preview);
+  folder.appendChild(label);
+  makeLauncherDropTarget(folder, groupName);
+  return folder;
+}
+
 function renderLaunchers() {
   const body = $("launcher-groups");
   const bili = $("launcher-bili");
   body.innerHTML = "";
-  const groups = new Map();
+
+  const common = el("section", "launcher-group launcher-sites size-large");
+  const head = el("header", "launcher-group-head");
+  const heading = el("h2");
+  heading.textContent = "常用网站";
+  head.appendChild(heading);
+  const items = el("div", "launcher-items launcher-site-items");
+  const folders = new Map();
   launcherState.links.forEach((link) => {
-    const group = link.group || "常用网站";
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group).push(link);
+    const groupName = link.group || "常用网站";
+    if (groupName === "常用网站") return;
+    if (!folders.has(groupName)) folders.set(groupName, []);
+    folders.get(groupName).push(link);
   });
 
-  if (!groups.size) {
+  const renderedFolders = new Set();
+  launcherState.links.forEach((link) => {
+    const groupName = link.group || "常用网站";
+    if (groupName === "常用网站") {
+      items.appendChild(createLauncherLink(link));
+    } else if (!renderedFolders.has(groupName)) {
+      renderedFolders.add(groupName);
+      items.appendChild(createLauncherFolder(groupName, folders.get(groupName)));
+    }
+  });
+  if (!launcherState.links.length) {
     const empty = el("p", "launcher-empty");
     empty.textContent = "还没有快捷入口，点击“编辑入口”后添加。";
-    body.appendChild(empty);
-    body.appendChild(bili);
-    return;
+    items.appendChild(empty);
   }
-
-  groups.forEach((links, groupName) => {
-    const group = el("section", `launcher-group size-${launcherGroupSize(groupName)}`);
-    const groupHead = el("header", "launcher-group-head");
-    const heading = el("h2");
-    heading.textContent = groupName;
-    const groupActions = el("div", "launcher-group-actions");
-    const size = el("button", "launcher-group-action");
-    size.type = "button";
-    size.title = launcherGroupSize(groupName) === "large" ? "改为小收藏夹" : "改为大收藏夹";
-    size.textContent = launcherGroupSize(groupName) === "large" ? "大" : "小";
-    size.addEventListener("click", () => toggleLauncherGroupSize(groupName));
-    const merge = el("button", "launcher-group-action");
-    merge.type = "button";
-    merge.title = "合并到其他收藏夹";
-    merge.textContent = "合并";
-    merge.disabled = groups.size < 2;
-    merge.addEventListener("click", () => openGroupMerge(groupName));
-    groupActions.appendChild(size);
-    groupActions.appendChild(merge);
-    groupHead.appendChild(heading);
-    groupHead.appendChild(groupActions);
-    const items = el("div", "launcher-items");
-    links.forEach((link) => {
-      const a = el("a", "launcher-link");
-      a.href = link.url;
-      a.title = link.title + "\n" + link.url;
-      a.draggable = true;
-
-      const icon = el("span", "launcher-favicon");
-      const fallback = el("span", "launcher-fallback");
-      fallback.textContent = (link.title || hostOf(link.url)).trim().slice(0, 1).toUpperCase();
-      const img = document.createElement("img");
-      img.src = favi(link.url);
-      img.alt = "";
-      img.addEventListener("load", () => (fallback.style.display = "none"));
-      img.addEventListener("error", () => (img.style.display = "none"));
-      icon.appendChild(fallback);
-      icon.appendChild(img);
-
-      const label = el("span", "launcher-label");
-      label.textContent = link.title;
-      a.appendChild(icon);
-      a.appendChild(label);
-      a.addEventListener("click", (event) => {
-        if (!launcherState.editing) return;
-        event.preventDefault();
-        openLauncherEditor(link);
-      });
-      a.addEventListener("dragstart", (event) => {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData(LAUNCHER_DRAG_TYPE, link.id);
-        event.dataTransfer.setData("text/uri-list", link.url);
-        a.classList.add("dragging");
-      });
-      a.addEventListener("dragover", (event) => {
-        if (!Array.from(event.dataTransfer?.types || []).includes(LAUNCHER_DRAG_TYPE)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.dataTransfer.dropEffect = "move";
-        clearDropTargets();
-        a.classList.add("merge-target");
-      });
-      a.addEventListener("dragleave", () => a.classList.remove("merge-target"));
-      a.addEventListener("drop", async (event) => {
-        const sourceId = event.dataTransfer.getData(LAUNCHER_DRAG_TYPE);
-        if (!sourceId) return;
-        event.preventDefault();
-        event.stopPropagation();
-        clearDropTargets();
-        await stackLauncherLinks(sourceId, link.id);
-      });
-      a.addEventListener("dragend", () => {
-        a.classList.remove("dragging");
-        clearDropTargets();
-      });
-      items.appendChild(a);
-    });
-    group.appendChild(groupHead);
-    group.appendChild(items);
-    group.addEventListener("dragover", (event) => {
-      if (!dragHasUrl(event)) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = Array.from(event.dataTransfer?.types || []).includes(LAUNCHER_DRAG_TYPE) ? "move" : "copy";
-      clearDropTargets();
-      group.classList.add("drop-target");
-    });
-    group.addEventListener("dragleave", (event) => {
-      if (!group.contains(event.relatedTarget)) group.classList.remove("drop-target");
-    });
-    group.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      clearDropTargets();
-      const sourceId = event.dataTransfer.getData(LAUNCHER_DRAG_TYPE);
-      if (sourceId) {
-        const source = launcherState.links.find((link) => link.id === sourceId);
-        if (source) await importLauncherLink(source, groupName);
-        return;
-      }
-      let item;
-      const packed = event.dataTransfer.getData("application/x-newtab-bookmark");
-      if (packed) {
-        try { item = JSON.parse(packed); } catch {}
-      }
-      if (!item) {
-        const uri = event.dataTransfer.getData("text/uri-list").split(/\r?\n/).find((line) => line && !line.startsWith("#"));
-        const text = uri || event.dataTransfer.getData("text/plain");
-        if (text) item = { title: hostOf(text.trim()), url: text.trim() };
-      }
-      if (item) await importLauncherLink(item, groupName);
-    });
-    body.appendChild(group);
-  });
+  common.appendChild(head);
+  common.appendChild(items);
+  makeLauncherDropTarget(common, "常用网站");
+  body.appendChild(common);
   body.appendChild(bili);
+
+  if ($("launcher-folder-dialog").open && launcherState.activeFolder) {
+    renderLauncherFolderDialog();
+  }
 }
 
 async function backgroundDataUrl(file) {
@@ -692,7 +763,7 @@ async function backgroundDataUrl(file) {
 }
 
 async function initLaunchers() {
-  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinksReady", "heroBackground"]);
+  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinkFolderTilesReady", "quickLinksReady", "heroBackground"]);
   launcherState.groupSizes = stored.quickLinkGroupSizes && typeof stored.quickLinkGroupSizes === "object"
     ? stored.quickLinkGroupSizes
     : {};
@@ -708,6 +779,18 @@ async function initLaunchers() {
     }));
     await saveLauncherLinks();
   }
+  if (!stored.quickLinkFolderTilesReady) {
+    const folderCounts = new Map();
+    launcherState.links.forEach((link) => {
+      const groupName = link.group || "常用网站";
+      if (groupName !== "常用网站") folderCounts.set(groupName, (folderCounts.get(groupName) || 0) + 1);
+    });
+    folderCounts.forEach((count, groupName) => {
+      launcherState.groupSizes[groupName] = count <= 4 ? "small" : "large";
+    });
+    await saveLauncherLinks();
+    await storageSet({ quickLinkFolderTilesReady: true });
+  }
   setLauncherBackground(stored.heroBackground);
   renderLaunchers();
 
@@ -721,6 +804,25 @@ async function initLaunchers() {
   $("bookmark-handle").addEventListener("click", toggleBookmarkPanel);
   $("bookmark-close").addEventListener("click", closeBookmarkPanel);
   $("bookmark-search").addEventListener("input", (event) => renderBookmarkImports(event.target.value));
+  $("folder-menu-backdrop").addEventListener("click", closeFolderMenu);
+  $("folder-menu-backdrop").addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    closeFolderMenu();
+  });
+  $("folder-menu-size").addEventListener("click", async () => {
+    const groupName = launcherState.folderMenuGroup;
+    closeFolderMenu();
+    if (groupName) await toggleLauncherGroupSize(groupName);
+  });
+  $("folder-menu-merge").addEventListener("click", () => {
+    const groupName = launcherState.folderMenuGroup;
+    closeFolderMenu();
+    if (groupName) openGroupMerge(groupName);
+  });
+  $("launcher-folder-close").addEventListener("click", () => $("launcher-folder-dialog").close());
+  $("launcher-folder-dialog").addEventListener("close", () => {
+    launcherState.activeFolder = "";
+  });
   $("launcher-cancel").addEventListener("click", () => $("launcher-dialog").close());
   $("group-merge-cancel").addEventListener("click", () => $("group-merge-dialog").close());
   $("group-merge-form").addEventListener("submit", async (event) => {
