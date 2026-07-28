@@ -351,6 +351,9 @@ function normalizeWebUrl(value) {
   return parsed.href;
 }
 
+const BACKGROUND_CURRENT_KEY = "hero";
+const BACKGROUND_HISTORY_KEY = "heroBackgroundHistory";
+const BACKGROUND_HISTORY_LIMIT = 8;
 let heroBackgroundUrls = [];
 
 function trackHeroBackgroundUrl(url) {
@@ -372,32 +375,32 @@ function openBackgroundDb() {
   });
 }
 
-async function backgroundDbPut(value) {
+async function backgroundDbPut(value, key = BACKGROUND_CURRENT_KEY) {
   const db = await openBackgroundDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("files", "readwrite");
-    tx.objectStore("files").put(value, "hero");
+    tx.objectStore("files").put(value, key);
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
 }
 
-async function backgroundDbGet() {
+async function backgroundDbGet(key = BACKGROUND_CURRENT_KEY) {
   const db = await openBackgroundDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("files", "readonly");
-    const request = tx.objectStore("files").get("hero");
+    const request = tx.objectStore("files").get(key);
     request.onsuccess = () => resolve(request.result || null);
     tx.oncomplete = () => db.close();
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
 }
 
-async function backgroundDbClear() {
+async function backgroundDbClear(key = BACKGROUND_CURRENT_KEY) {
   const db = await openBackgroundDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("files", "readwrite");
-    tx.objectStore("files").delete("hero");
+    tx.objectStore("files").delete(key);
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onerror = () => { db.close(); reject(tx.error); };
   });
@@ -417,12 +420,12 @@ async function setLauncherBackground(value) {
     return;
   }
   if (value.type === "web") {
-    const pack = await backgroundDbGet();
+    const pack = await backgroundDbGet(value.storageKey || BACKGROUND_CURRENT_KEY);
     if (pack?.type === "web") await mountWebWallpaper(pack, host);
     return;
   }
   if (value.type === "db") {
-    const file = await backgroundDbGet();
+    const file = await backgroundDbGet(value.storageKey || BACKGROUND_CURRENT_KEY);
     if (!file) return;
     const url = trackHeroBackgroundUrl(URL.createObjectURL(file));
     if (/^video\//i.test(file.type || "") || /\.(mp4|webm)$/i.test(file.name || "")) {
@@ -440,6 +443,83 @@ async function setLauncherBackground(value) {
       host.appendChild(image);
     }
   }
+}
+
+function backgroundHistoryTitle(value) {
+  if (!value) return "默认背景";
+  if (typeof value === "string") return "自定义图片";
+  return value.name || (value.type === "web" ? "Web Wallpaper" : "自定义背景");
+}
+
+function backgroundHistoryType(value) {
+  if (typeof value === "string") return "图片";
+  if (value?.type === "web") return "Web Wallpaper";
+  if (value?.type === "db") return /video/i.test(value.mediaType || "") ? "视频" : "图片/GIF";
+  return "背景";
+}
+
+async function addBackgroundHistory(value, payload = null) {
+  const id = `bg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  let itemValue = value;
+  if (value && typeof value === "object") itemValue = { ...value, storageKey: id };
+  if (payload) {
+    await backgroundDbClear(BACKGROUND_CURRENT_KEY);
+    await backgroundDbPut(payload, id);
+  }
+  const stored = await storageGet([BACKGROUND_HISTORY_KEY]);
+  const history = Array.isArray(stored[BACKGROUND_HISTORY_KEY]) ? stored[BACKGROUND_HISTORY_KEY] : [];
+  const item = { id, title: backgroundHistoryTitle(itemValue), kind: backgroundHistoryType(itemValue), createdAt: Date.now(), value: itemValue };
+  const next = [item, ...history.filter((old) => JSON.stringify(old.value) !== JSON.stringify(itemValue))].slice(0, BACKGROUND_HISTORY_LIMIT);
+  const dropped = history.slice(BACKGROUND_HISTORY_LIMIT - 1).filter((old) => old.value?.storageKey);
+  await Promise.all(dropped.map((old) => backgroundDbClear(old.value.storageKey)));
+  await storageSet({ [BACKGROUND_HISTORY_KEY]: next });
+  return itemValue;
+}
+
+function renderBackgroundHistory(history = []) {
+  const body = $("background-history-list");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!history.length) {
+    const empty = el("p", "muted small");
+    empty.textContent = "还没有保存过壁纸。";
+    body.appendChild(empty);
+    return;
+  }
+  history.forEach((item) => {
+    const row = el("div", "background-history-item");
+    const info = el("button", "background-history-main");
+    info.type = "button";
+    const title = el("b");
+    title.textContent = item.title || "自定义背景";
+    const meta = el("span");
+    meta.textContent = `${item.kind || "背景"} · ${new Date(item.createdAt || Date.now()).toLocaleString()}`;
+    info.append(title, meta);
+    info.addEventListener("click", async () => {
+      await storageSet({ heroBackground: item.value });
+      await setLauncherBackground(item.value);
+      $("background-history-dialog").close();
+    });
+    const del = el("button", "background-history-delete");
+    del.type = "button";
+    del.textContent = "删除";
+    del.addEventListener("click", async () => {
+      const stored = await storageGet([BACKGROUND_HISTORY_KEY, "heroBackground"]);
+      const next = (stored[BACKGROUND_HISTORY_KEY] || []).filter((old) => old.id !== item.id);
+      if (item.value?.storageKey) await backgroundDbClear(item.value.storageKey);
+      await storageSet({ [BACKGROUND_HISTORY_KEY]: next });
+      if (JSON.stringify(stored.heroBackground) === JSON.stringify(item.value)) await clearImportedBackground();
+      renderBackgroundHistory(next);
+    });
+    row.append(info, del);
+    body.appendChild(row);
+  });
+}
+
+async function openBackgroundHistory() {
+  const stored = await storageGet([BACKGROUND_HISTORY_KEY]);
+  renderBackgroundHistory(Array.isArray(stored[BACKGROUND_HISTORY_KEY]) ? stored[BACKGROUND_HISTORY_KEY] : []);
+  $("background-history-dialog")?.showModal();
 }
 
 async function saveLauncherLinks() {
@@ -930,23 +1010,10 @@ function renderLaunchers() {
   }
 }
 
-async function backgroundDataUrl(file) {
-  const image = await createImageBitmap(file);
-  const scale = Math.min(1, 1920 / image.width, 1080 / image.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.width * scale));
-  canvas.height = Math.max(1, Math.round(image.height * scale));
-  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-  image.close();
-  return canvas.toDataURL("image/webp", 0.82);
-}
-
 function isBackgroundMedia(file) {
   return file && (/^image\//i.test(file.type || "") || /^video\//i.test(file.type || "") || /\.(png|jpe?g|webp|gif|mp4|webm)$/i.test(file.name || ""));
 }
-function isStaticImage(file) {
-  return file && /^image\//i.test(file.type || "") && /\.(png|jpe?g|webp)$/i.test(file.name || "");
-}
+
 
 const WALLPAPER_MAX_FILES = 450;
 const WALLPAPER_MAX_BYTES = 180 * 1024 * 1024;
@@ -1195,25 +1262,26 @@ async function initLaunchers() {
       const file = await chooseBackgroundFile();
       if (!file) return;
       let value;
+      let payload = null;
       if (file.type === "web") {
-        await backgroundDbPut(file);
+        payload = file;
         value = { type: "web", name: file.name, entry: file.entry };
       } else if (!isBackgroundMedia(file)) {
         alert("请选择图片、GIF、MP4、WebM 或包含 index.html 的 Web Wallpaper 文件夹。");
         return;
-      } else if (isStaticImage(file) && file.size < 6 * 1024 * 1024) {
-        value = await backgroundDataUrl(file);
-        await backgroundDbClear();
       } else {
-        await backgroundDbPut(file);
+        payload = file;
         value = { type: "db", name: file.name, mediaType: file.type || "application/octet-stream" };
       }
+      value = await addBackgroundHistory(value, payload);
       await storageSet({ heroBackground: value });
       await setLauncherBackground(value);
     } catch (error) {
       if (error?.name !== "AbortError") alert(error?.message || "背景保存失败，请换一张尺寸较小的图片。");
     }
   });
+  $("background-history").addEventListener("click", openBackgroundHistory);
+  $("background-history-close").addEventListener("click", () => $("background-history-dialog").close());
   $("background-reset").addEventListener("click", clearImportedBackground);
   $("default-reset").addEventListener("click", clearImportedBackground);
 }

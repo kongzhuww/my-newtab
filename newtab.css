@@ -216,6 +216,58 @@ body.hide-todo:not(.hide-weather) .launcher-center { grid-column: 2 / span 2; }
 }
 .launcher-command:hover,
 .launcher-icon:hover { background: rgba(9, 16, 27, 0.78); }
+.background-history-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 80px));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  padding: 0;
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+}
+.background-history-dialog::backdrop { background: rgba(2, 6, 23, 0.36); }
+.background-history-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 10px;
+}
+.background-history-dialog h2 { margin: 0; font-size: 16px; }
+.background-history-dialog header button,
+.background-history-delete {
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  cursor: pointer;
+}
+.background-history-dialog header button { width: 30px; height: 30px; }
+.background-history-list { padding: 0 14px 14px; overflow: auto; }
+.background-history-item {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 8px;
+}
+.background-history-main {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+.background-history-main b,
+.background-history-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.background-history-main span { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.background-history-delete { padding: 0 12px; color: #fecaca; }
+.background-history-main:hover,
+.background-history-delete:hover { background: rgba(255, 255, 255, 0.14); }
 .hero-clock {
   max-width: 720px;
   margin: 0 auto;
