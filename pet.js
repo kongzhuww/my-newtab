@@ -124,6 +124,7 @@
 
   // ---- drag / interact ----
   host.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
     const r = host.getBoundingClientRect();
     drag.on = true; drag.moved = false; drag.sx = e.clientX; drag.sy = e.clientY; drag.ox = r.left; drag.oy = r.top;
     host.setPointerCapture(e.pointerId);
@@ -133,12 +134,16 @@
     const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) drag.moved = true;
     if (drag.moved) {
-      host.style.left = Math.max(0, Math.min(innerWidth - 120, drag.ox + dx)) + "px";
-      host.style.top = Math.max(0, Math.min(innerHeight - 120, drag.oy + dy)) + "px";
+      host.style.left = Math.max(0, Math.min(innerWidth - host.offsetWidth, drag.ox + dx)) + "px";
+      host.style.top = Math.max(0, Math.min(innerHeight - host.offsetHeight, drag.oy + dy)) + "px";
       host.style.right = "auto"; host.style.bottom = "auto";
     }
   });
   host.addEventListener("pointerup", () => { if (drag.on && !drag.moved) interact(); drag.on = false; });
+  host.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    openPicker();
+  });
 
   launcher.addEventListener("click", openPicker);
   picker.querySelector(".pet-close").addEventListener("click", closePicker);

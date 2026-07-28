@@ -38,11 +38,26 @@
         </form>
 
         <div id="launcher-groups" class="launcher-groups"></div>
-        <button id="launcher-add" class="launcher-add" type="button">＋ 添加网站</button>
+        <div class="launcher-edit-actions">
+          <button id="launcher-add" class="launcher-add" type="button">＋ 添加网站</button>
+          <button id="bookmark-open" class="launcher-add" type="button">导入书签</button>
+        </div>
       </div>
 
       <input id="background-input" type="file" accept="image/*" hidden />
     </section>
+
+    <aside id="bookmark-panel" class="bookmark-panel" hidden aria-label="书签导入">
+      <header>
+        <div>
+          <h2>从书签导入</h2>
+          <p>拖到左侧分组，或点加号导入常用网站</p>
+        </div>
+        <button id="bookmark-close" type="button" title="关闭">✕</button>
+      </header>
+      <input id="bookmark-search" class="bookmark-search" placeholder="搜索书签" autocomplete="off" />
+      <div id="bookmark-import-list" class="bookmark-import-list"></div>
+    </aside>
 
     <dialog id="launcher-dialog" class="launcher-dialog">
       <form id="launcher-form">
