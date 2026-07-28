@@ -5,7 +5,7 @@
   const API = "https://monster-siren.hypergryph.com/api";
   const IDLE = { queue: [], index: -1 };
   let albums = [], albumsLoaded = false, allSongs = [], current = null, playing = false;
-  let lyrics = [], mode = "shuffle";
+  let lyrics = [], mode = "shuffle", lyricIndex = -2, lastTopLyric = "", lastProgressSecond = -1;
   const audio = new Audio();
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -30,10 +30,21 @@
   const tv = mk("div", "ms-tv");
   tv.style.display = "none";
   tv.innerHTML = '<div class="ms-tv-head"><span class="ms-tv-title">明日方舟 MV</span><button class="ms-tv-close">✕</button></div><div class="ms-tv-screen"></div>';
+  const topPlayer = mk("div", "ms-top-player");
+  topPlayer.hidden = true;
+  topPlayer.innerHTML =
+    '<div class="ms-top-side"><button class="ms-top-prev" title="上一首">⏮</button><button class="ms-top-play" title="播放/暂停">▶</button></div>' +
+    '<button class="ms-top-main" title="打开塞壬电台"><span class="ms-top-title">塞壬电台</span><span class="ms-top-lyric">选择歌曲后在这里显示歌词</span></button>' +
+    '<div class="ms-top-side"><button class="ms-top-next" title="下一首">⏭</button><button class="ms-top-open" title="打开歌单">🎵</button></div>';
   (document.getElementById("tb-launchers") || document.body).append(launch);
+  const topbar = $(".topbar");
+  if (topbar) topbar.insertBefore(topPlayer, $(".tb-actions", topbar));
+  else document.body.append(topPlayer);
   document.body.append(panel, tv);
 
   const browse = $(".ms-browse", panel), now = $(".ms-now", panel), backBtn = $(".ms-back", panel);
+  const panelLyric = $(".ms-lyric", panel), panelPlay = $(".ms-play", panel), curText = $(".ms-cur", panel), durText = $(".ms-dur", panel), seek = $(".ms-seek", panel);
+  const topTitle = $(".ms-top-title", topPlayer), topLyric = $(".ms-top-lyric", topPlayer), topPlay = $(".ms-top-play", topPlayer);
 
   function makeDraggable(element, handle, minVisibleWidth, minVisibleHeight) {
     let drag = null;
@@ -103,14 +114,24 @@
       });
     } catch { browse.innerHTML = '<p class="ms-hint">加载失败</p>'; }
   }
+  function artistText() { return current ? ((current.artists || []).join(", ") || "Monster Siren") : "Monster Siren"; }
+  function setTopLyric(text) {
+    const nextText = "♬ " + artistText() + (text ? " · " + text : "");
+    if (nextText !== lastTopLyric) { topLyric.textContent = nextText; lastTopLyric = nextText; }
+  }
+  function togglePanel() { panel.style.display = panel.style.display === "none" ? "flex" : "none"; if (panel.style.display === "flex") loadAlbums(); }
+
   async function playCid(cid) {
     try {
       const d = await api(`/song/${cid}`);
       current = d; IDLE.index = allSongs.findIndex((s) => s.cid === cid);
       audio.src = d.sourceUrl; audio.play().catch(() => {});
       now.style.display = "block";
+      topPlayer.hidden = false;
       $(".ms-title", panel).textContent = d.name;
-      $(".ms-artist", panel).textContent = (d.artists || []).join(", ") || "Monster Siren";
+      $(".ms-artist", panel).textContent = artistText();
+      topTitle.textContent = d.name;
+      setTopLyric("");
       $(".ms-cover", panel).src = https(d.coverUrl || "");
       loadLyric(d.lyricUrl);
       if (tv.style.display !== "none") loadMV(d.name);
@@ -126,8 +147,8 @@
 
   // ---- lyrics ----
   async function loadLyric(url) {
-    lyrics = []; $(".ms-lyric", panel).textContent = "";
-    if (!url) return;
+    lyrics = []; lyricIndex = -2; panelLyric.textContent = ""; setTopLyric("");
+    if (!url) { setTopLyric("纯音乐"); return; }
     try {
       const txt = await (await fetch(https(url))).text();
       lyrics = [];
@@ -142,10 +163,15 @@
   function isCredit(t) { return /(作曲|作词|编曲|演唱|混音|母带|制作|Vocal|Compos|Arrang|Lyric|Mix|Master)/i.test(t); }
   function tickLyric() {
     if (!lyrics.length) return;
-    let li = -1;
-    for (let i = 0; i < lyrics.length; i++) { if (lyrics[i].t <= audio.currentTime + 0.2) li = i; else break; }
+    let li = lyricIndex;
+    if (li < -1 || li >= lyrics.length || lyrics[Math.max(li, 0)]?.t > audio.currentTime + 0.2) li = -1;
+    while (li + 1 < lyrics.length && lyrics[li + 1].t <= audio.currentTime + 0.2) li++;
+    if (li === lyricIndex) return;
+    lyricIndex = li;
     const real = lyrics.some((l) => !isCredit(l.text));
-    $(".ms-lyric", panel).textContent = real ? (li >= 0 ? lyrics[li].text : "♪") : "纯音乐";
+    const line = real ? (li >= 0 ? lyrics[li].text : "♪") : "纯音乐";
+    panelLyric.textContent = line;
+    setTopLyric(line);
   }
 
   // ---- MV (bilibili) ----
@@ -166,24 +192,33 @@
 
   // ---- controls ----
   function renderModeBtn() { $(".ms-mode", panel).textContent = mode === "shuffle" ? "🔀" : mode === "one" ? "🔂" : "🔁"; }
-  $(".ms-play", panel).onclick = () => { if (audio.paused) audio.play(); else audio.pause(); };
+  panelPlay.onclick = () => { if (audio.paused) audio.play(); else audio.pause(); };
   $(".ms-prev", panel).onclick = prev;
   $(".ms-next", panel).onclick = next;
   $(".ms-mode", panel).onclick = () => { mode = mode === "shuffle" ? "list" : mode === "list" ? "one" : "shuffle"; renderModeBtn(); };
-  $(".ms-seek", panel).oninput = (e) => { if (audio.duration) audio.currentTime = (e.target.value / 100) * audio.duration; };
+  seek.oninput = (e) => { if (audio.duration) audio.currentTime = (e.target.value / 100) * audio.duration; lyricIndex = -2; };
   $(".ms-back", panel).onclick = renderAlbums;
   $(".ms-close", panel).onclick = () => (panel.style.display = "none");
   $(".ms-mv", panel).onclick = () => { tv.style.display = tv.style.display === "none" ? "block" : "none"; if (tv.style.display === "block" && current) loadMV(current.name); };
   $(".ms-tv-close", tv).onclick = () => (tv.style.display = "none");
-  launch.onclick = () => { panel.style.display = panel.style.display === "none" ? "flex" : "none"; if (panel.style.display === "flex") loadAlbums(); };
+  launch.onclick = togglePanel;
+  $(".ms-top-main", topPlayer).onclick = togglePanel;
+  $(".ms-top-open", topPlayer).onclick = togglePanel;
+  $(".ms-top-play", topPlayer).onclick = () => { if (audio.paused) audio.play(); else audio.pause(); };
+  $(".ms-top-prev", topPlayer).onclick = prev;
+  $(".ms-top-next", topPlayer).onclick = next;
 
-  audio.addEventListener("play", () => { playing = true; $(".ms-play", panel).textContent = "⏸"; });
-  audio.addEventListener("pause", () => { playing = false; $(".ms-play", panel).textContent = "▶"; });
+  audio.addEventListener("play", () => { playing = true; panelPlay.textContent = "⏸"; topPlay.textContent = "⏸"; });
+  audio.addEventListener("pause", () => { playing = false; panelPlay.textContent = "▶"; topPlay.textContent = "▶"; });
   audio.addEventListener("ended", () => { if (mode === "one") { audio.currentTime = 0; audio.play(); } else next(); });
   audio.addEventListener("timeupdate", () => {
-    $(".ms-cur", panel).textContent = fmt(audio.currentTime);
-    $(".ms-dur", panel).textContent = fmt(audio.duration);
-    $(".ms-seek", panel).value = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+    const second = Math.floor(audio.currentTime);
+    if (panel.style.display !== "none" && second !== lastProgressSecond) {
+      lastProgressSecond = second;
+      curText.textContent = fmt(audio.currentTime);
+      durText.textContent = fmt(audio.duration);
+      seek.value = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+    }
     tickLyric();
   });
 })();

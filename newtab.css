@@ -17,6 +17,7 @@
   --aurora1: rgba(16, 185, 129, 0.18);
   --aurora2: rgba(56, 189, 248, 0.15);
   --aurora3: rgba(139, 92, 246, 0.15);
+  --topbar-height: 53px;
 }
 
 html[data-theme="light"] {
@@ -44,6 +45,7 @@ html[data-theme="light"] {
 body {
   margin: 0;
   min-height: 100vh;
+  overflow: hidden;
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -52,12 +54,11 @@ body {
 
 /* top bar */
 .topbar {
-  position: sticky; top: 0; z-index: 60;
+  position: fixed; left: 0; right: 0; top: 0; z-index: 60;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 10px 20px;
   background: var(--glass);
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(8px);
 }
 .tb-brand { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--heading); }
 .tb-logo { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, #34d399, #38bdf8); color: #06121a; font-weight: 800; font-size: 12px; }
@@ -68,18 +69,79 @@ body {
 .tb-btn { display: inline-grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; font-size: 14px; cursor: pointer; text-decoration: none; }
 .tb-btn:hover { border-color: var(--border-strong); }
 
+.ms-top-player {
+  flex: 1 1 320px;
+  max-width: 760px;
+  min-width: 220px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto;
+}
+.ms-top-player[hidden] { display: none; }
+.ms-top-side { display: inline-flex; align-items: center; gap: 7px; }
+.ms-top-player button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.ms-top-player button:hover { border-color: rgba(16,185,129,0.55); color: #6ee7b7; }
+.ms-top-side button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.ms-top-player .ms-top-main {
+  min-width: 0;
+  padding: 2px 12px;
+  border: 0;
+  background: transparent;
+  text-align: center;
+}
+.ms-top-title,
+.ms-top-lyric {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-top-title { color: #10b981; font-size: 15px; font-weight: 800; letter-spacing: 0.01em; }
+.ms-top-lyric { margin-top: 2px; color: var(--muted); font-size: 11px; }
+
+
 /* editable first-screen launcher */
 .launcher {
   --launcher-image: url("assets/newtab-mountains.png");
-  position: relative;
-  min-height: calc(100svh - 53px);
+  position: fixed;
+  inset: var(--topbar-height) 0 0;
+  min-height: 0;
   display: flex;
   color: #fff;
   background-image: var(--launcher-image);
   background-position: center;
   background-size: cover;
-  box-shadow: inset 0 0 0 100vmax rgba(4, 10, 20, 0.34);
 }
+.hero-background-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hero-background-media img,
+.hero-background-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.hero-background-media:empty { display: none; }
+
 .launcher-inner {
   position: relative;
   z-index: 1;
@@ -125,12 +187,10 @@ body {
   gap: 8px;
 }
 .launcher-command,
-.launcher-icon,
-.launcher-add {
+.launcher-icon {
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: rgba(9, 16, 27, 0.56);
   color: #fff;
-  backdrop-filter: blur(12px);
   cursor: pointer;
 }
 .launcher-command {
@@ -146,8 +206,7 @@ body {
   font-size: 16px;
 }
 .launcher-command:hover,
-.launcher-icon:hover,
-.launcher-add:hover { background: rgba(9, 16, 27, 0.78); }
+.launcher-icon:hover { background: rgba(9, 16, 27, 0.78); }
 .hero-clock {
   max-width: 720px;
   margin: 0 auto;
@@ -181,8 +240,7 @@ body {
   padding: 0 16px;
   border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: 12px;
-  background: rgba(9, 16, 27, 0.58);
-  backdrop-filter: blur(14px);
+  background: rgba(9, 16, 27, 0.68);
 }
 .search:focus-within {
   border-color: rgba(255, 255, 255, 0.72);
@@ -211,9 +269,7 @@ body {
   padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
-  background: rgba(9, 16, 27, 0.46);
-  backdrop-filter: blur(14px);
-  transition: border-color 0.15s, background 0.15s;
+  background: rgba(9, 16, 27, 0.62);
 }
 .launcher-group.size-small { grid-column: span 1; }
 .launcher-group.size-large { grid-column: span 2; }
@@ -328,17 +384,6 @@ body {
   white-space: nowrap;
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.7);
 }
-.launcher.editing .launcher-link { cursor: pointer; }
-.launcher.editing .launcher-favicon::after {
-  content: "✎";
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(15, 23, 42, 0.74);
-  color: #fff;
-  font-size: 19px;
-}
 .launcher-folder {
   min-width: 0;
   display: flex;
@@ -354,9 +399,7 @@ body {
   display: grid;
   place-content: center;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.20);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, transform 0.15s;
 }
@@ -411,20 +454,6 @@ body {
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
 }
-.launcher-edit-actions {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 18px;
-}
-.launcher-add {
-  height: 36px;
-  padding: 0 15px;
-  border-radius: 8px;
-  font-size: 12px;
-}
-.launcher.editing .launcher-edit-actions { display: flex; }
 .launcher-empty {
   grid-column: 1 / -1;
   margin: 20px 0;
@@ -537,7 +566,7 @@ body {
 
 /* bookmark import drawer */
 .bookmark-panel {
-  --bookmark-panel-width: min(360px, calc(100vw - 32px));
+  --bookmark-panel-width: min(420px, calc(100vw - 32px));
   position: fixed;
   z-index: 58;
   top: 50%;
@@ -557,7 +586,7 @@ body {
   overflow: hidden;
   border: 1px solid var(--border);
   border-left: 0;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 14px 14px 0;
   background: var(--panel);
   box-shadow: 16px 0 40px rgba(0, 0, 0, 0.3);
 }
@@ -609,62 +638,102 @@ body {
 .bookmark-search {
   height: 40px;
   margin: 14px 16px 8px;
-  padding: 0 11px;
+  padding: 0 12px 0 34px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 999px;
   outline: 0;
   background: var(--surface);
   color: var(--text);
 }
-.bookmark-search:focus { border-color: var(--border-strong); }
-.bookmark-import-list { flex: 1; overflow-y: auto; padding: 8px 10px 16px; }
-.bookmark-import-folder {
-  margin: 12px 8px 6px;
+.bookmark-panel-sheet { position: relative; }
+.bookmark-panel-sheet::after {
+  content: "⌕";
+  position: absolute;
+  left: 28px;
+  top: 86px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: 15px;
+  pointer-events: none;
 }
+.bookmark-search:focus { border-color: var(--border-strong); }
+.bookmark-import-list { flex: 1; overflow-y: auto; padding: 4px 10px 16px; }
+.bookmark-tree { display: flex; flex-direction: column; gap: 2px; }
+.bookmark-tree-folder { margin: 2px 0; }
+.bookmark-tree-folder summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+.bookmark-tree-folder summary::-webkit-details-marker { display: none; }
+.bookmark-tree-folder summary:hover { background: var(--surface); color: var(--text); }
+.bookmark-folder-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.bookmark-folder-count { color: var(--dim); font-size: 11px; }
+.bookmark-tree-children { margin-left: 14px; padding-left: 8px; border-left: 1px solid var(--border); }
 .bookmark-import-item {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 30px;
+  grid-template-columns: 22px minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 10px;
-  padding: 9px 8px;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 6px;
+  padding-left: calc(6px + var(--bookmark-depth, 0) * 8px);
   border: 1px solid transparent;
   border-radius: 8px;
   cursor: grab;
 }
 .bookmark-import-item:hover { border-color: var(--border); background: var(--surface); }
 .bookmark-import-item:active { cursor: grabbing; }
-.bookmark-import-item img { width: 24px; height: 24px; border-radius: 6px; }
+.bookmark-import-item img { width: 16px; height: 16px; border-radius: 4px; }
 .bookmark-import-copy { min-width: 0; }
 .bookmark-import-title {
   display: block;
   overflow: hidden;
   color: var(--text);
   font-size: 12px;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .bookmark-import-host {
   display: block;
   overflow: hidden;
-  margin-top: 2px;
+  margin-top: 1px;
   color: var(--dim);
   font-size: 10px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.bookmark-import-add { width: 30px; height: 30px; font-size: 17px; }
+.bookmark-import-add { width: 28px; height: 28px; border-radius: 7px; font-size: 16px; }
 .bookmark-import-empty { padding: 24px 12px; color: var(--muted); font-size: 12px; text-align: center; }
 
 .wrap {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 24px 24px 72px;
+  position: fixed;
+  inset: var(--topbar-height) 0 0;
+  max-width: none;
+  margin: 0;
+  padding: 24px max(24px, calc((100vw - 1200px) / 2)) 72px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
   gap: 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--background);
+  transform: translateY(100%);
+  transition: transform 0.28s ease-out;
 }
+body[data-page="home"] .launcher { transform: translateY(0); }
+body[data-page="home"] .wrap { transform: translateY(100%); }
+body[data-page="daily"] .launcher { transform: translateY(-100%); }
+body[data-page="daily"] .wrap { transform: translateY(0); }
+.launcher { transition: transform 0.28s ease-out; }
 
 .card {
   background: var(--glass);
@@ -812,7 +881,7 @@ body {
 .ms-song:hover { background: var(--surface); }
 .ms-song.active { background: rgba(167,139,250,0.15); color: #c4b5fd; font-weight: 600; }
 .ms-now { border-top: 1px solid var(--border); background: var(--surface); padding: 12px 14px; }
-.ms-lyric { text-align: center; font-size: 14px; font-weight: 600; color: #c4b5fd; min-height: 20px; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-lyric { display: none; text-align: center; font-size: 14px; font-weight: 600; color: #c4b5fd; min-height: 20px; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-nrow { display: flex; align-items: center; gap: 8px; }
 .ms-cover { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
 .ms-meta { flex: 1; min-width: 0; }
@@ -914,8 +983,10 @@ body {
 }
 
 @media (max-width: 760px) {
-  .topbar { padding-inline: 12px; }
-  .tb-brand b, #tb-launchers { display: none; }
+  .topbar { flex-wrap: wrap; padding-inline: 12px; }
+  .tb-brand b { display: none; }
+  #tb-launchers { flex-wrap: wrap; }
+  .ms-top-player { order: 3; flex-basis: 100%; max-width: none; }
   .launcher-inner { padding: 68px 16px 32px; }
   .launcher-toolbar { top: 16px; right: 16px; }
   .launcher-overview { grid-template-columns: 1fr; }

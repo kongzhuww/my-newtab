@@ -282,8 +282,32 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
+const LEAFTAB_DEFAULT_LINKS = [
+  { title: "Bilibili", url: "https://www.bilibili.com/", group: "常用网站" },
+  { title: "GitHub", url: "https://github.com/", group: "常用网站" },
+  { title: "YouTube", url: "https://www.youtube.com/", group: "常用网站" },
+  { title: "Reddit", url: "https://www.reddit.com/", group: "常用网站" },
+  { title: "ChatGPT", url: "https://chatgpt.com/", group: "AI" },
+  { title: "DeepSeek", url: "https://chat.deepseek.com/", group: "AI" },
+  { title: "Claude", url: "https://claude.ai/new", group: "AI" },
+  { title: "Google AI Studio", url: "https://aistudio.google.com/", group: "AI" },
+  { title: "Gmail", url: "https://mail.google.com/", group: "邮箱" },
+  { title: "Outlook", url: "https://outlook.live.com/", group: "邮箱" },
+  { title: "Todoist", url: "https://app.todoist.com/app/today", group: "工具" },
+  { title: "Speedtest", url: "https://www.speedtest.net/", group: "工具" }
+];
+const LEAFTAB_DEFAULT_GROUP_SIZES = {
+  "常用网站": "large",
+  "AI": "large",
+  "邮箱": "small",
+  "工具": "small"
+};
+function cloneLeaftabDefaultLinks() {
+  return LEAFTAB_DEFAULT_LINKS.map((link) => ({ ...link, id: crypto.randomUUID() }));
+}
+
 const launcherState = { links: [], groupSizes: {}, editing: false, mergingGroup: "", activeFolder: "", folderMenuGroup: "" };
-const bookmarkImportState = { items: [], loaded: false };
+const bookmarkImportState = { items: [], tree: null, loaded: false };
 const LAUNCHER_DRAG_TYPE = "application/x-newtab-launcher";
 
 function getTopSites() {
@@ -301,10 +325,85 @@ function normalizeWebUrl(value) {
   return parsed.href;
 }
 
-function setLauncherBackground(value) {
+let heroBackgroundUrl = "";
+
+function clearHeroBackgroundUrl() {
+  if (heroBackgroundUrl) URL.revokeObjectURL(heroBackgroundUrl);
+  heroBackgroundUrl = "";
+}
+
+function openBackgroundDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("my-newtab-background", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("files");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function backgroundDbPut(file) {
+  const db = await openBackgroundDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").put(file, "hero");
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function backgroundDbGet() {
+  const db = await openBackgroundDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("files", "readonly");
+    const request = tx.objectStore("files").get("hero");
+    request.onsuccess = () => resolve(request.result || null);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function backgroundDbClear() {
+  const db = await openBackgroundDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").delete("hero");
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function setLauncherBackground(value) {
   const launcher = $("launcher");
-  if (value) launcher.style.setProperty("--launcher-image", `url(${JSON.stringify(value)})`);
-  else launcher.style.removeProperty("--launcher-image");
+  const host = $("hero-background-media");
+  if (!launcher || !host) return;
+  clearHeroBackgroundUrl();
+  host.innerHTML = "";
+  launcher.style.removeProperty("--launcher-image");
+
+  if (!value) return;
+  if (typeof value === "string") {
+    launcher.style.setProperty("--launcher-image", `url(${JSON.stringify(value)})`);
+    return;
+  }
+  if (value.type === "db") {
+    const file = await backgroundDbGet();
+    if (!file) return;
+    heroBackgroundUrl = URL.createObjectURL(file);
+    if (/^video\//i.test(file.type || "") || /\.(mp4|webm)$/i.test(file.name || "")) {
+      const video = document.createElement("video");
+      video.src = heroBackgroundUrl;
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      host.appendChild(video);
+    } else {
+      const image = document.createElement("img");
+      image.src = heroBackgroundUrl;
+      image.alt = "";
+      host.appendChild(image);
+    }
+  }
 }
 
 async function saveLauncherLinks() {
@@ -452,58 +551,86 @@ function collectBookmarks(node, path, out) {
   return out;
 }
 
+function createBookmarkImportRow(item, depth = 0) {
+  const row = el("div", "bookmark-import-item");
+  row.style.setProperty("--bookmark-depth", String(Math.min(depth, 6)));
+  row.draggable = true;
+  row.title = "拖到快捷入口分组";
+  const icon = document.createElement("img");
+  icon.src = favi(item.url);
+  icon.alt = "";
+  const copy = el("span", "bookmark-import-copy");
+  const title = el("span", "bookmark-import-title");
+  title.textContent = item.title;
+  const meta = el("span", "bookmark-import-host");
+  meta.textContent = item.folder ? `${hostOf(item.url)} · ${item.folder}` : hostOf(item.url);
+  copy.appendChild(title);
+  copy.appendChild(meta);
+  const add = el("button", "bookmark-import-add");
+  add.type = "button";
+  add.title = "导入到常用网站";
+  add.textContent = "＋";
+  add.addEventListener("click", () => importLauncherLink(item, "常用网站"));
+  row.addEventListener("dragstart", (event) => {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-newtab-bookmark", JSON.stringify(item));
+    event.dataTransfer.setData("text/uri-list", item.url);
+  });
+  row.addEventListener("dragend", clearDropTargets);
+  row.appendChild(icon);
+  row.appendChild(copy);
+  row.appendChild(add);
+  return row;
+}
+
+function countBookmarkLinks(node) {
+  if (!node) return 0;
+  return (node.children || []).reduce((sum, child) => sum + (child.url ? 1 : countBookmarkLinks(child)), 0);
+}
+
+function renderBookmarkTreeNode(node, path, depth) {
+  if (node.url) {
+    return createBookmarkImportRow({ title: node.title || hostOf(node.url), url: node.url, folder: path.join(" / ") || "书签" }, depth);
+  }
+  const children = node.children || [];
+  const details = el("details", "bookmark-tree-folder");
+  if (depth < 1) details.open = true;
+  const summary = document.createElement("summary");
+  const name = node.title || "书签";
+  summary.innerHTML = `<span class="bookmark-folder-name">📁 ${esc(name)}</span><span class="bookmark-folder-count">${countBookmarkLinks(node)}</span>`;
+  details.appendChild(summary);
+  const group = el("div", "bookmark-tree-children");
+  children.forEach((child) => group.appendChild(renderBookmarkTreeNode(child, node.title ? [...path, node.title] : path, depth + 1)));
+  details.appendChild(group);
+  return details;
+}
+
 function renderBookmarkImports(query = "") {
   const body = $("bookmark-import-list");
   const keyword = query.trim().toLowerCase();
-  const items = keyword
-    ? bookmarkImportState.items.filter((item) => `${item.title} ${item.url} ${item.folder}`.toLowerCase().includes(keyword))
-    : bookmarkImportState.items;
   body.innerHTML = "";
-  if (!items.length) {
+  if (!bookmarkImportState.items.length) {
     const empty = el("p", "bookmark-import-empty");
-    empty.textContent = bookmarkImportState.items.length ? "没有匹配的书签" : "书签栏为空";
+    empty.textContent = "书签栏为空";
     body.appendChild(empty);
     return;
   }
 
-  let lastFolder = "";
-  items.forEach((item) => {
-    if (item.folder !== lastFolder) {
-      lastFolder = item.folder;
-      const folder = el("p", "bookmark-import-folder");
-      folder.textContent = lastFolder;
-      body.appendChild(folder);
+  if (keyword) {
+    const items = bookmarkImportState.items.filter((item) => `${item.title} ${item.url} ${item.folder}`.toLowerCase().includes(keyword));
+    if (!items.length) {
+      const empty = el("p", "bookmark-import-empty");
+      empty.textContent = "没有匹配的书签";
+      body.appendChild(empty);
+      return;
     }
+    items.forEach((item) => body.appendChild(createBookmarkImportRow(item, 0)));
+    return;
+  }
 
-    const row = el("div", "bookmark-import-item");
-    row.draggable = true;
-    row.title = "拖到快捷入口分组";
-    const icon = document.createElement("img");
-    icon.src = favi(item.url);
-    icon.alt = "";
-    const copy = el("span", "bookmark-import-copy");
-    const title = el("span", "bookmark-import-title");
-    title.textContent = item.title;
-    const host = el("span", "bookmark-import-host");
-    host.textContent = hostOf(item.url);
-    copy.appendChild(title);
-    copy.appendChild(host);
-    const add = el("button", "bookmark-import-add");
-    add.type = "button";
-    add.title = "导入到常用网站";
-    add.textContent = "＋";
-    add.addEventListener("click", () => importLauncherLink(item, "常用网站"));
-    row.addEventListener("dragstart", (event) => {
-      event.dataTransfer.effectAllowed = "copy";
-      event.dataTransfer.setData("application/x-newtab-bookmark", JSON.stringify(item));
-      event.dataTransfer.setData("text/uri-list", item.url);
-    });
-    row.addEventListener("dragend", clearDropTargets);
-    row.appendChild(icon);
-    row.appendChild(copy);
-    row.appendChild(add);
-    body.appendChild(row);
-  });
+  const tree = el("div", "bookmark-tree");
+  (bookmarkImportState.tree?.children || []).forEach((child) => tree.appendChild(renderBookmarkTreeNode(child, [], 0)));
+  body.appendChild(tree);
 }
 
 async function openBookmarkPanel() {
@@ -563,14 +690,15 @@ function createLauncherIcon(link, className = "launcher-favicon") {
 function createLauncherLink(link, closeFolderOnEdit = false) {
   const anchor = el("a", "launcher-link");
   anchor.href = link.url;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
   anchor.title = link.title + "\n" + link.url;
   anchor.draggable = true;
   const label = el("span", "launcher-label");
   label.textContent = link.title;
   anchor.appendChild(createLauncherIcon(link));
   anchor.appendChild(label);
-  anchor.addEventListener("click", (event) => {
-    if (!launcherState.editing) return;
+  anchor.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     if (closeFolderOnEdit) $("launcher-folder-dialog").close();
     openLauncherEditor(link);
@@ -762,12 +890,61 @@ async function backgroundDataUrl(file) {
   return canvas.toDataURL("image/webp", 0.82);
 }
 
+function isBackgroundMedia(file) {
+  return file && (/^image\//i.test(file.type || "") || /^video\//i.test(file.type || "") || /\.(png|jpe?g|webp|gif|mp4|webm)$/i.test(file.name || ""));
+}
+function isStaticImage(file) {
+  return file && /^image\//i.test(file.type || "") && /\.(png|jpe?g|webp)$/i.test(file.name || "");
+}
+
+async function pickWallpaperMediaFromDirectory(handle) {
+  const files = [];
+  async function walk(dir, depth = 0) {
+    if (depth > 2) return;
+    for await (const entry of dir.values()) {
+      if (entry.kind === "file") {
+        const file = await entry.getFile();
+        if (isBackgroundMedia(file)) files.push(file);
+      } else if (entry.kind === "directory") {
+        await walk(entry, depth + 1);
+      }
+    }
+  }
+  await walk(handle);
+  return files.sort((a, b) => {
+    const score = (f) => /\.(mp4|webm)$/i.test(f.name) ? 0 : /\.gif$/i.test(f.name) ? 1 : /^preview\./i.test(f.name) ? 2 : /cover|thumb|poster/i.test(f.name) ? 3 : 4;
+    return score(a) - score(b) || b.size - a.size;
+  })[0] || null;
+}
+
+async function chooseBackgroundFile() {
+  if (window.showDirectoryPicker && confirm("要导入 Wallpaper Engine 文件夹吗？\n确定：选择 Wallpaper 文件夹，优先使用 MP4/WebM/GIF。\n取消：选择普通图片/GIF/视频文件。")) {
+    const dir = await window.showDirectoryPicker();
+    const file = await pickWallpaperMediaFromDirectory(dir);
+    if (!file) throw new Error("未在 Wallpaper 文件夹里找到可用的图片、GIF、MP4 或 WebM。");
+    return file;
+  }
+  return new Promise((resolve) => {
+    const input = $("background-input");
+    input.onchange = () => {
+      resolve(input.files?.[0] || null);
+      input.value = "";
+    };
+    input.click();
+  });
+}
+
 async function initLaunchers() {
-  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinkFolderTilesReady", "quickLinksReady", "heroBackground"]);
+  const stored = await storageGet(["quickLinks", "quickLinkGroupSizes", "quickLinkFolderTilesReady", "quickLinksReady", "heroBackground", "leaftabBackup20260728Migrated"]);
   launcherState.groupSizes = stored.quickLinkGroupSizes && typeof stored.quickLinkGroupSizes === "object"
     ? stored.quickLinkGroupSizes
     : {};
-  if (stored.quickLinksReady) {
+  if (!stored.leaftabBackup20260728Migrated) {
+    launcherState.links = cloneLeaftabDefaultLinks();
+    launcherState.groupSizes = { ...launcherState.groupSizes, ...LEAFTAB_DEFAULT_GROUP_SIZES };
+    await saveLauncherLinks();
+    await storageSet({ leaftabBackup20260728Migrated: true });
+  } else if (stored.quickLinksReady) {
     launcherState.links = Array.isArray(stored.quickLinks) ? stored.quickLinks : [];
   } else {
     const sites = await getTopSites();
@@ -791,16 +968,10 @@ async function initLaunchers() {
     await saveLauncherLinks();
     await storageSet({ quickLinkFolderTilesReady: true });
   }
-  setLauncherBackground(stored.heroBackground);
+  await setLauncherBackground(stored.heroBackground);
   renderLaunchers();
 
-  $("launcher-edit").addEventListener("click", () => {
-    launcherState.editing = !launcherState.editing;
-    $("launcher").classList.toggle("editing", launcherState.editing);
-    $("launcher-edit").textContent = launcherState.editing ? "完成" : "编辑入口";
-  });
-  $("launcher-add").addEventListener("click", () => openLauncherEditor(null));
-  $("bookmark-open").addEventListener("click", openBookmarkPanel);
+  $("bookmark-handle").title = "展开浏览器书签，拖到快捷入口分组可添加网站";
   $("bookmark-handle").addEventListener("click", toggleBookmarkPanel);
   $("bookmark-close").addEventListener("click", closeBookmarkPanel);
   $("bookmark-search").addEventListener("input", (event) => renderBookmarkImports(event.target.value));
@@ -865,24 +1036,34 @@ async function initLaunchers() {
     $("launcher-dialog").close();
   });
 
-  $("background-change").addEventListener("click", () => $("background-input").click());
-  $("background-input").addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  $("background-change").addEventListener("click", async () => {
     try {
-      const value = await backgroundDataUrl(file);
+      const file = await chooseBackgroundFile();
+      if (!file) return;
+      if (!isBackgroundMedia(file)) { alert("请选择图片、GIF、MP4 或 WebM。"); return; }
+      let value;
+      if (isStaticImage(file) && file.size < 6 * 1024 * 1024) {
+        value = await backgroundDataUrl(file);
+        await backgroundDbClear();
+      } else {
+        await backgroundDbPut(file);
+        value = { type: "db", name: file.name, mediaType: file.type || "application/octet-stream" };
+      }
       await storageSet({ heroBackground: value });
-      setLauncherBackground(value);
-    } catch {
-      alert("背景保存失败，请换一张尺寸较小的图片。");
-    } finally {
-      event.target.value = "";
+      await setLauncherBackground(value);
+    } catch (error) {
+      if (error?.name !== "AbortError") alert(error?.message || "背景保存失败，请换一张尺寸较小的图片。");
     }
   });
-  $("background-reset").addEventListener("click", async () => {
-    await storageRemove("heroBackground");
-    setLauncherBackground("");
-  });
+  $("background-reset").addEventListener("click", clearImportedBackground);
+  $("default-reset").addEventListener("click", clearImportedBackground);
+}
+
+
+async function clearImportedBackground() {
+  await storageRemove("heroBackground");
+  await backgroundDbClear();
+  await setLauncherBackground("");
 }
 
 // ---------- search ----------
@@ -1020,6 +1201,23 @@ async function loadTrending() {
   }
 }
 
+
+// ---------- page switch ----------
+function initPageSwitch() {
+  const button = $("daily-toggle");
+  const daily = $("daily-section");
+  if (!button || !daily) return;
+  const setPage = (page) => {
+    const dailyMode = page === "daily";
+    document.body.dataset.page = dailyMode ? "daily" : "home";
+    button.textContent = dailyMode ? "🏠 首页" : "📰 日报";
+    button.title = dailyMode ? "返回首页" : "查看日报";
+    if (dailyMode) daily.scrollTop = 0;
+  };
+  button.addEventListener("click", () => setPage(document.body.dataset.page === "daily" ? "home" : "daily"));
+  setPage("home");
+}
+
 // ---------- theme ----------
 function applyThemeLabel() {
   const dark = document.documentElement.dataset.theme !== "light";
@@ -1040,6 +1238,7 @@ function initTheme() {
 // ---------- boot ----------
 async function boot() {
   initTheme();
+  initPageSwitch();
   tick();
   setInterval(tick, 1000);
   initSearch();

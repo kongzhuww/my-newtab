@@ -25,6 +25,8 @@
   let walking = true;
   let walkFrame = 0;
   let walkLastFrame = 0;
+  let scrolling = false;
+  let scrollTimer = 0;
   let playerGeneration = 0;
   const drag = { on: false, sx: 0, sy: 0, ox: 0, oy: 0, moved: false };
 
@@ -97,6 +99,7 @@
       if (requestNextFrame && !this.stopRequestAnimationFrame) {
         requestAnimationFrame(() => this.drawFrame());
       }
+      if (scrolling) return;
       const now = performance.now();
       if (requestNextFrame && now - lastDraw < FRAME_INTERVAL) return;
       lastDraw = now;
@@ -176,6 +179,11 @@
     if (!Number.isFinite(x)) x = innerWidth - 220;
     let direction = facing;
     const step = (timestamp) => {
+      if (scrolling) {
+        walkLastFrame = 0;
+        walkFrame = requestAnimationFrame(step);
+        return;
+      }
       if (walkLastFrame && timestamp - walkLastFrame < FRAME_INTERVAL) {
         walkFrame = requestAnimationFrame(step);
         return;
@@ -226,6 +234,12 @@
     else stopWalking();
     updateMenu();
   }
+
+  window.addEventListener("scroll", () => {
+    scrolling = true;
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => { scrolling = false; }, 140);
+  }, { passive: true });
 
   async function ensureModels() {
     if (modelsState === "ready" || modelsState === "loading") return;

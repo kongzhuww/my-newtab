@@ -12,17 +12,18 @@
     <header class="topbar">
       <div class="tb-brand"><span class="tb-logo">LW</span><b>新标签页</b></div>
       <div class="tb-actions">
-        <span id="tb-launchers"></span>
+        <span id="tb-launchers"><button id="daily-toggle" class="tb-pill" type="button" title="查看日报">📰 日报</button><a class="tb-pill" href="https://www.xiaoheihe.cn/app/user/favour/content" target="_blank" rel="noreferrer" title="打开小黑盒收藏">🎮 小黑盒收藏</a></span>
         <button id="theme-toggle" class="tb-btn" title="切换主题">🌙</button>
+        <button id="default-reset" class="tb-btn" type="button" title="清除 Wallpaper / 自定义背景">↺</button>
         <a href="options.html" class="tb-btn" title="设置">⚙</a>
       </div>
     </header>
 
     <section id="launcher" class="launcher" aria-label="快捷入口">
+      <div id="hero-background-media" class="hero-background-media" aria-hidden="true"></div>
       <div class="launcher-toolbar">
-        <button id="background-change" class="launcher-command" type="button" title="更换首屏背景">背景</button>
+        <button id="background-change" class="launcher-command" type="button" title="导入图片或 Wallpaper Engine 文件夹预览图">背景</button>
         <button id="background-reset" class="launcher-icon" type="button" title="恢复默认背景">↶</button>
-        <button id="launcher-edit" class="launcher-command" type="button">编辑入口</button>
       </div>
 
       <div class="launcher-inner">
@@ -70,13 +71,9 @@
             <div id="bili-body"><p class="muted small">加载中…</p></div>
           </section>
         </div>
-        <div class="launcher-edit-actions">
-          <button id="launcher-add" class="launcher-add" type="button">＋ 添加网站</button>
-          <button id="bookmark-open" class="launcher-add" type="button">导入书签</button>
-        </div>
       </div>
 
-      <input id="background-input" type="file" accept="image/*" hidden />
+      <input id="background-input" type="file" accept="image/*,.pkg,.mp4,.webm" hidden />
     </section>
 
     <aside id="bookmark-panel" class="bookmark-panel" aria-label="浏览器书签">
@@ -155,22 +152,7 @@
       </div>
     </dialog>
 
-    <main class="wrap">
-      <!-- Heybox jump -->
-      <section class="card">
-        <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#f97316,#facc15)"></span>
-          <h2>小黑盒收藏</h2>
-        </header>
-        <a class="heybox" href="https://www.xiaoheihe.cn/app/user/favour/content" target="_blank" rel="noreferrer">
-          <span class="hb-icon">🎮</span>
-          <span>
-            <span class="hb-title">打开我的小黑盒收藏 ↗</span>
-            <span class="hb-sub muted small">接口需签名、暂不内嵌，点此跳转收藏页</span>
-          </span>
-        </a>
-      </section>
-
+    <main id="daily-section" class="wrap">
       <!-- VPS probe -->
       <section class="card wide">
         <header class="card-head">
