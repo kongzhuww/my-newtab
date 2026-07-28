@@ -109,11 +109,11 @@ async function loadTodos(token) {
   }
   body.innerHTML = `<p class="muted small">加载中…</p>`;
   try {
-    const r = await fetch("https://api.todoist.com/rest/v2/tasks?filter=" + encodeURIComponent("today | overdue"), {
+    const r = await fetch("https://api.todoist.com/api/v1/tasks/filter?query=" + encodeURIComponent("today | overdue"), {
       headers: { Authorization: "Bearer " + token },
     });
     if (!r.ok) throw new Error();
-    const tasks = await r.json();
+    const tasks = (await r.json()).results || [];
     if (!tasks.length) {
       body.innerHTML = `<p class="muted small">今天没有待办 🎉</p>`;
       return;
@@ -128,9 +128,16 @@ async function loadTodos(token) {
         b.querySelector(".check").classList.add("done");
         setTimeout(async () => {
           try {
-            await fetch(`https://api.todoist.com/rest/v2/tasks/${t.id}/close`, { method: "POST", headers: { Authorization: "Bearer " + token } });
-          } catch {}
-          b.remove();
+            const r = await fetch(`https://api.todoist.com/api/v1/tasks/${t.id}/close`, {
+              method: "POST",
+              headers: { Authorization: "Bearer " + token },
+            });
+            if (!r.ok) throw new Error();
+            b.remove();
+          } catch {
+            b.classList.remove("done");
+            b.querySelector(".check").classList.remove("done");
+          }
         }, 300);
       });
       body.appendChild(b);
@@ -145,7 +152,10 @@ const gh = { repos: [], cats: [], map: {}, active: "全部", UNCAT: "未分类" 
 function ghSave() { chrome.storage.local.set({ ghCats: gh.cats, ghMap: gh.map }); }
 async function loadGitHub(user, token) {
   const body = $("gh-body");
-  const headers = { Accept: "application/vnd.github+json" };
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2026-03-10",
+  };
   let url;
   if (token) { headers.Authorization = "Bearer " + token; url = "https://api.github.com/user/starred?per_page=100"; if (user) $("gh-user").textContent = user; }
   else if (user) { url = `https://api.github.com/users/${encodeURIComponent(user)}/starred?per_page=100`; $("gh-user").textContent = user; }
