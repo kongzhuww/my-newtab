@@ -21,7 +21,7 @@ function storageRemove(keys) {
   });
 }
 function getCfg() {
-  return storageGet(["todoistToken", "ghUser", "ghToken", "vpsUrl", "city", "showWeather", "showSites", "showBili", "showTodo"]);
+  return storageGet(["todoistToken", "ghUser", "ghToken", "vpsUrl", "city", "showWeather", "showSites", "showBili", "showTodo", "showBookmarkPanel"]);
 }
 
 // ---------- helpers ----------
@@ -309,7 +309,7 @@ function cloneLeaftabDefaultLinks() {
 }
 
 const launcherState = { links: [], groupSizes: {}, editing: false, mergingGroup: "", activeFolder: "", folderMenuGroup: "" };
-const homeModulePrefs = { showWeather: true, showSites: true, showBili: true, showTodo: true };
+const homeModulePrefs = { showWeather: true, showSites: true, showBili: true, showTodo: true, showBookmarkPanel: true };
 const bookmarkImportState = { items: [], tree: null, loaded: false };
 const LAUNCHER_DRAG_TYPE = "application/x-newtab-launcher";
 
@@ -318,14 +318,19 @@ function updateHomeModulePrefs(cfg = {}) {
   homeModulePrefs.showSites = cfg.showSites !== false;
   homeModulePrefs.showBili = cfg.showBili !== false;
   homeModulePrefs.showTodo = cfg.showTodo !== false;
+  homeModulePrefs.showBookmarkPanel = cfg.showBookmarkPanel !== false;
   document.body.classList.toggle("hide-weather", !homeModulePrefs.showWeather);
   document.body.classList.toggle("hide-sites", !homeModulePrefs.showSites);
   document.body.classList.toggle("hide-bili", !homeModulePrefs.showBili);
   document.body.classList.toggle("hide-todo", !homeModulePrefs.showTodo);
+  document.body.classList.toggle("hide-bookmarks", !homeModulePrefs.showBookmarkPanel);
   const weather = document.querySelector(".launcher-weather");
   const todo = document.querySelector(".launcher-todo");
   if (weather) weather.hidden = !homeModulePrefs.showWeather;
   if (todo) todo.hidden = !homeModulePrefs.showTodo;
+  const bookmarkPanel = $("bookmark-panel");
+  if (bookmarkPanel) bookmarkPanel.hidden = !homeModulePrefs.showBookmarkPanel;
+  if (!homeModulePrefs.showBookmarkPanel) closeBookmarkPanel();
   if (!homeModulePrefs.showWeather && $("weather-body")) $("weather-body").innerHTML = `<p class="muted small">加载中…</p>`;
   if (!homeModulePrefs.showTodo && $("todo-body")) $("todo-body").innerHTML = `<p class="muted small">加载中…</p>`;
 }
@@ -662,7 +667,8 @@ async function openBookmarkPanel() {
   $("bookmark-handle-icon").textContent = "‹";
   if (!bookmarkImportState.loaded) {
     const tree = await new Promise((resolve) => chrome.bookmarks.getTree(resolve));
-    bookmarkImportState.items = collectBookmarks(tree[0] || {}, [], []).sort((a, b) =>
+    bookmarkImportState.tree = tree[0] || {};
+    bookmarkImportState.items = collectBookmarks(bookmarkImportState.tree, [], []).sort((a, b) =>
       a.folder.localeCompare(b.folder, "zh") || a.title.localeCompare(b.title, "zh"));
     bookmarkImportState.loaded = true;
   }
@@ -1284,7 +1290,7 @@ function watchHomeModuleSettings(cfg) {
   if (!chrome.storage?.onChanged) return;
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    const watched = ["showWeather", "showSites", "showBili", "showTodo", "city", "todoistToken"];
+    const watched = ["showWeather", "showSites", "showBili", "showTodo", "showBookmarkPanel", "city", "todoistToken"];
     if (!watched.some((key) => key in changes)) return;
     watched.forEach((key) => {
       if (key in changes) cfg[key] = changes[key].newValue;

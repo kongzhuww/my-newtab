@@ -592,6 +592,7 @@ body.hide-todo:not(.hide-weather) .launcher-center { grid-column: 2 / span 2; }
   transition: transform 0.3s ease-out;
 }
 .bookmark-panel.open { transform: translate(0, -50%); }
+body.hide-bookmarks .bookmark-panel { display: none !important; }
 .bookmark-panel-sheet {
   width: var(--bookmark-panel-width);
   height: min(76vh, 680px);

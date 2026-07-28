@@ -1,7 +1,7 @@
 "use strict";
 
-const keys = ["todoistToken", "ghUser", "ghToken", "vpsUrl", "city", "showWeather", "showSites", "showBili", "showTodo"];
-const toggleKeys = ["showWeather", "showSites", "showBili", "showTodo"];
+const keys = ["todoistToken", "ghUser", "ghToken", "vpsUrl", "city", "showWeather", "showSites", "showBili", "showTodo", "showBookmarkPanel"];
+const toggleKeys = ["showWeather", "showSites", "showBili", "showTodo", "showBookmarkPanel"];
 
 chrome.storage.local.get(keys, (cfg) => {
   for (const k of keys) {
