@@ -26,16 +26,38 @@
       </div>
 
       <div class="launcher-inner">
-        <div class="hero-clock">
-          <p id="greeting">你好</p>
-          <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
-          <p id="date" class="date"></p>
-        </div>
+        <div class="launcher-overview">
+          <section class="launcher-widget launcher-weather">
+            <header class="card-head">
+              <span class="bar" style="background: linear-gradient(180deg,#38bdf8,#818cf8)"></span>
+              <h2 id="wx-title">天气</h2>
+            </header>
+            <div id="weather-body"><p class="muted small">加载中…</p></div>
+          </section>
 
-        <form id="search" class="search">
-          <span class="s-icon" aria-hidden="true">⌕</span>
-          <input id="search-input" placeholder="搜索，或输入网址直接打开" autocomplete="off" />
-        </form>
+          <div class="launcher-center">
+            <div class="hero-clock">
+              <p id="greeting">你好</p>
+              <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
+              <p id="date" class="date"></p>
+            </div>
+
+            <form id="search" class="search">
+              <span class="s-icon" aria-hidden="true">⌕</span>
+              <input id="search-input" placeholder="搜索，或输入网址直接打开" autocomplete="off" />
+            </form>
+          </div>
+
+          <section class="launcher-widget launcher-todo">
+            <header class="card-head">
+              <span class="bar sky"></span>
+              <h2>今日待办</h2>
+              <span class="grow"></span>
+              <button id="todo-refresh" class="icon-btn" title="刷新">↻</button>
+            </header>
+            <div id="todo-body"><p class="muted small">加载中…</p></div>
+          </section>
+        </div>
 
         <div id="launcher-groups" class="launcher-groups">
           <section id="launcher-bili" class="launcher-group launcher-bili size-large">
@@ -134,26 +156,6 @@
     </dialog>
 
     <main class="wrap">
-      <!-- Todoist -->
-      <section class="card">
-        <header class="card-head">
-          <span class="bar sky"></span>
-          <h2>今日待办</h2>
-          <span class="grow"></span>
-          <button id="todo-refresh" class="icon-btn" title="刷新">↻</button>
-        </header>
-        <div id="todo-body"><p class="muted small">加载中…</p></div>
-      </section>
-
-      <!-- Weather -->
-      <section class="card">
-        <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#38bdf8,#818cf8)"></span>
-          <h2 id="wx-title">天气</h2>
-        </header>
-        <div id="weather-body"><p class="muted small">加载中…</p></div>
-      </section>
-
       <!-- Heybox jump -->
       <section class="card">
         <header class="card-head">
