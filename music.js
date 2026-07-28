@@ -35,6 +35,37 @@
 
   const browse = $(".ms-browse", panel), now = $(".ms-now", panel), backBtn = $(".ms-back", panel);
 
+  function makeDraggable(element, handle, minVisibleWidth, minVisibleHeight) {
+    let drag = null;
+    handle.classList.add("ms-drag-handle");
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.target.closest("button")) return;
+      const rect = element.getBoundingClientRect();
+      drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+      handle.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (!drag) return;
+      const left = drag.left + event.clientX - drag.x;
+      const top = drag.top + event.clientY - drag.y;
+      element.style.left = Math.max(0, Math.min(window.innerWidth - minVisibleWidth, left)) + "px";
+      element.style.top = Math.max(0, Math.min(window.innerHeight - minVisibleHeight, top)) + "px";
+      element.style.right = "auto";
+      element.style.bottom = "auto";
+      element.style.transform = "none";
+    });
+
+    const stopDragging = () => { drag = null; };
+    handle.addEventListener("pointerup", stopDragging);
+    handle.addEventListener("pointercancel", stopDragging);
+  }
+
+  makeDraggable(panel, $("header", panel), 160, 80);
+  makeDraggable(tv, $(".ms-tv-head", tv), 120, 80);
+
   // ---- data / playback ----
   async function loadAlbums() {
     if (albumsLoaded) return;

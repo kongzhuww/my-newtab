@@ -885,56 +885,6 @@ async function initLaunchers() {
   });
 }
 
-function bmLink(l) {
-  const a = el("a", "bm-link");
-  a.href = l.url;
-  a.title = l.title || l.url;
-  a.innerHTML = `<img src="${favi(l.url)}" alt=""><span class="truncate" style="max-width:180px">${esc(l.title || hostOf(l.url))}</span>`;
-  return a;
-}
-function flattenLinks(node, out) {
-  for (const c of node.children || []) {
-    if (c.url) out.push(c);
-    else if (c.children) flattenLinks(c, out);
-  }
-  return out;
-}
-function bmFolder(f) {
-  const wrap = el("div", "bm-folder");
-  const items = flattenLinks(f, []);
-  const head = el("button", "bm-fhead", `<span class="caret">▶</span><span>${esc(f.title)}</span><span class="count">${items.length}</span>`);
-  const box = el("div", "bm-fitems");
-  box.style.display = "none";
-  let filled = false;
-  head.addEventListener("click", () => {
-    const open = box.style.display !== "none";
-    box.style.display = open ? "none" : "flex";
-    head.classList.toggle("open", !open);
-    if (!open && !filled) { filled = true; items.slice(0, 80).forEach((l) => box.appendChild(bmLink(l))); }
-  });
-  wrap.appendChild(head);
-  wrap.appendChild(box);
-  return wrap;
-}
-function loadBookmarks() {
-  const body = $("bm-body");
-  if (!chrome.bookmarks) { body.innerHTML = `<p class="muted small">不可用</p>`; return; }
-  chrome.bookmarks.getTree((tree) => {
-    const root = tree[0];
-    const bar = (root.children || []).find((c) => c.id === "1") || (root.children || [])[0];
-    if (!bar || !bar.children || !bar.children.length) { body.innerHTML = `<p class="muted small">书签栏为空</p>`; return; }
-    body.innerHTML = "";
-    const links = bar.children.filter((c) => c.url);
-    const folders = bar.children.filter((c) => !c.url && c.children);
-    if (links.length) {
-      const flat = el("div", "bm-flat");
-      links.forEach((l) => flat.appendChild(bmLink(l)));
-      body.appendChild(flat);
-    }
-    folders.forEach((f) => body.appendChild(bmFolder(f)));
-  });
-}
-
 // ---------- search ----------
 function initSearch() {
   const form = $("search"), input = $("search-input");
@@ -1098,7 +1048,6 @@ async function boot() {
   loadWeather(cfg.city);
   loadAiHot();
   loadTrending();
-  loadBookmarks();
   loadBili();
   $("aihot-refresh").addEventListener("click", loadAiHot);
   loadTodos(cfg.todoistToken);
