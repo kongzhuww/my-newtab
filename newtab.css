@@ -147,16 +147,24 @@ body {
   z-index: 1;
   width: min(1360px, 100%);
   margin: 0 auto;
-  padding: 42px 32px 52px;
+  padding: 34px 32px 52px;
   transition: padding-right 0.2s;
 }
 .launcher-overview {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(380px, 1.35fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(380px, 1.35fr) minmax(280px, 1fr);
   gap: 18px;
   align-items: start;
 }
-.launcher-center { min-width: 0; padding-top: 8px; }
+.launcher-center { min-width: 0; grid-column: 2; padding-top: 8px; }
+.launcher-weather { grid-column: 1; }
+.launcher-todo { grid-column: 3; }
+body.hide-weather.hide-todo .launcher-overview { display: block; }
+body.hide-weather.hide-todo .launcher-center { width: min(720px, 100%); margin: 0 auto; }
+body.hide-weather:not(.hide-todo) .launcher-center { grid-column: 1 / span 2; }
+body.hide-weather:not(.hide-todo) .launcher-todo { grid-column: 3; }
+body.hide-todo:not(.hide-weather) .launcher-weather { grid-column: 1; }
+body.hide-todo:not(.hide-weather) .launcher-center { grid-column: 2 / span 2; }
 .launcher-widget {
   --heading: #fff;
   --text: #e2e8f0;
@@ -263,6 +271,9 @@ body {
   gap: 18px;
   margin-top: 32px;
 }
+.launcher-groups:not(.has-sites):not(.has-bili) { display: none; }
+.launcher-groups.has-sites:not(.has-bili) { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.launcher-groups.has-bili:not(.has-sites) { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); }
 .launcher-group {
   min-width: 0;
   min-height: 132px;
@@ -296,11 +307,13 @@ body {
   background: rgba(14, 40, 61, 0.72);
 }
 .launcher-sites {
+  grid-column: 1 / span 2;
   height: 362px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+.launcher-groups.has-sites:not(.has-bili) .launcher-sites { grid-column: 1 / -1; width: min(760px, 100%); justify-self: center; }
 .launcher-sites .launcher-group-head { flex: none; }
 .launcher-site-items {
   min-height: 0;
@@ -327,6 +340,7 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+.launcher-groups.has-bili:not(.has-sites) .launcher-bili { grid-column: 2; }
 .launcher-bili .card-head { flex: none; margin-bottom: 10px; }
 .launcher-bili #bili-body {
   min-height: 0;
@@ -1008,3 +1022,5 @@ body[data-page="daily"] .wrap { transform: translateY(0); }
 @media (max-width: 640px) {
   .ms-panel { left: 12px; right: 12px; top: 64px; bottom: 12px; width: auto; max-width: none; height: auto; max-height: none; transform: none; }
 }
+
+[hidden] { display: none !important; }

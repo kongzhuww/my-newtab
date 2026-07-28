@@ -316,12 +316,14 @@ function updateHomeModulePrefs(cfg = {}) {
   homeModulePrefs.showSites = cfg.showSites !== false;
   homeModulePrefs.showBili = cfg.showBili !== false;
   homeModulePrefs.showTodo = cfg.showTodo !== false;
+  document.body.classList.toggle("hide-weather", !homeModulePrefs.showWeather);
+  document.body.classList.toggle("hide-sites", !homeModulePrefs.showSites);
+  document.body.classList.toggle("hide-bili", !homeModulePrefs.showBili);
+  document.body.classList.toggle("hide-todo", !homeModulePrefs.showTodo);
   const weather = document.querySelector(".launcher-weather");
   const todo = document.querySelector(".launcher-todo");
-  const bili = $("launcher-bili");
   if (weather) weather.hidden = !homeModulePrefs.showWeather;
   if (todo) todo.hidden = !homeModulePrefs.showTodo;
-  if (bili) bili.hidden = !homeModulePrefs.showBili;
 }
 
 
@@ -849,10 +851,24 @@ function createLauncherFolder(groupName, links) {
   return folder;
 }
 
+function createBiliLauncherCard() {
+  const card = el("section", "launcher-group launcher-bili size-large");
+  card.id = "launcher-bili";
+  card.innerHTML = `<header class="card-head">
+    <span class="bar pink"></span>
+    <h2>B站收藏夹</h2>
+    <span class="grow"></span>
+    <span id="bili-user" class="muted small"></span>
+  </header>
+  <div id="bili-body"><p class="muted small">加载中…</p></div>`;
+  return card;
+}
+
 function renderLaunchers() {
   const body = $("launcher-groups");
-  const bili = $("launcher-bili");
   body.innerHTML = "";
+  body.classList.toggle("has-sites", homeModulePrefs.showSites);
+  body.classList.toggle("has-bili", homeModulePrefs.showBili);
 
   const common = el("section", "launcher-group launcher-sites size-large");
   const head = el("header", "launcher-group-head");
