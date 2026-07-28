@@ -493,6 +493,7 @@ function openLauncherEditor(link) {
 
 function renderLaunchers() {
   const body = $("launcher-groups");
+  const bili = $("launcher-bili");
   body.innerHTML = "";
   const groups = new Map();
   launcherState.links.forEach((link) => {
@@ -505,6 +506,7 @@ function renderLaunchers() {
     const empty = el("p", "launcher-empty");
     empty.textContent = "还没有快捷入口，点击“编辑入口”后添加。";
     body.appendChild(empty);
+    body.appendChild(bili);
     return;
   }
 
@@ -587,6 +589,7 @@ function renderLaunchers() {
     });
     body.appendChild(group);
   });
+  body.appendChild(bili);
 }
 
 async function backgroundDataUrl(file) {

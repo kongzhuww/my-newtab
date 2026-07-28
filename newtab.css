@@ -229,6 +229,26 @@ body {
   border-color: rgba(125, 211, 252, 0.9);
   background: rgba(14, 40, 61, 0.72);
 }
+.launcher-group.launcher-bili {
+  --heading: #fff;
+  --text: rgba(255, 255, 255, 0.9);
+  --muted: rgba(255, 255, 255, 0.7);
+  --dim: rgba(255, 255, 255, 0.55);
+  --border: rgba(255, 255, 255, 0.16);
+  --surface: rgba(9, 16, 27, 0.34);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  grid-column: 3 / span 2;
+  max-height: 362px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.launcher-bili .card-head { flex: none; margin-bottom: 10px; }
+.launcher-bili #bili-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
 .launcher-items {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
@@ -695,6 +715,7 @@ body {
 
 @media (max-width: 1100px) {
   .launcher-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .launcher-group.launcher-bili { grid-column: 1 / -1; }
 }
 
 @media (max-width: 760px) {
@@ -708,6 +729,7 @@ body {
   .launcher-group { padding: 16px; }
   .launcher-group.size-small,
   .launcher-group.size-large { grid-column: span 1; }
+  .launcher-group.launcher-bili { grid-column: span 1; max-height: 420px; }
   .launcher-items { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
   .bookmark-panel { top: 53px; width: 100vw; }
   .bookmark-panel-open .launcher-inner { padding-right: 16px; }

@@ -37,7 +37,17 @@
           <input id="search-input" placeholder="搜索，或输入网址直接打开" autocomplete="off" />
         </form>
 
-        <div id="launcher-groups" class="launcher-groups"></div>
+        <div id="launcher-groups" class="launcher-groups">
+          <section id="launcher-bili" class="launcher-group launcher-bili size-large">
+            <header class="card-head">
+              <span class="bar pink"></span>
+              <h2>B站收藏夹</h2>
+              <span class="grow"></span>
+              <span id="bili-user" class="muted small"></span>
+            </header>
+            <div id="bili-body"><p class="muted small">加载中…</p></div>
+          </section>
+        </div>
         <div class="launcher-edit-actions">
           <button id="launcher-add" class="launcher-add" type="button">＋ 添加网站</button>
           <button id="bookmark-open" class="launcher-add" type="button">导入书签</button>
@@ -176,17 +186,6 @@
           <h2>书签栏</h2>
         </header>
         <div id="bm-body"><p class="muted small">加载中…</p></div>
-      </section>
-
-      <!-- Bilibili favourites -->
-      <section class="card wide">
-        <header class="card-head">
-          <span class="bar pink"></span>
-          <h2>B站收藏夹</h2>
-          <span class="grow"></span>
-          <span id="bili-user" class="muted small"></span>
-        </header>
-        <div id="bili-body"><p class="muted small">加载中…</p></div>
       </section>
 
       <!-- GitHub stars -->
