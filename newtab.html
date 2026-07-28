@@ -17,20 +17,59 @@
         <a href="options.html" class="tb-btn" target="_blank" rel="noreferrer" title="设置">⚙</a>
       </div>
     </header>
-    <main class="wrap">
-      <!-- Search -->
-      <form id="search" class="search wide">
-        <span class="s-icon">🔍</span>
-        <input id="search-input" placeholder="搜索，或输入网址回车直达…" autocomplete="off" />
+
+    <section id="launcher" class="launcher" aria-label="快捷入口">
+      <div class="launcher-toolbar">
+        <button id="background-change" class="launcher-command" type="button" title="更换首屏背景">背景</button>
+        <button id="background-reset" class="launcher-icon" type="button" title="恢复默认背景">↶</button>
+        <button id="launcher-edit" class="launcher-command" type="button">编辑入口</button>
+      </div>
+
+      <div class="launcher-inner">
+        <div class="hero-clock">
+          <p id="greeting">你好</p>
+          <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
+          <p id="date" class="date"></p>
+        </div>
+
+        <form id="search" class="search">
+          <span class="s-icon" aria-hidden="true">⌕</span>
+          <input id="search-input" placeholder="搜索，或输入网址直接打开" autocomplete="off" />
+        </form>
+
+        <div id="launcher-groups" class="launcher-groups"></div>
+        <button id="launcher-add" class="launcher-add" type="button">＋ 添加网站</button>
+      </div>
+
+      <input id="background-input" type="file" accept="image/*" hidden />
+    </section>
+
+    <dialog id="launcher-dialog" class="launcher-dialog">
+      <form id="launcher-form">
+        <input id="launcher-id" type="hidden" />
+        <h2 id="launcher-dialog-title">添加网站</h2>
+        <label>
+          名称
+          <input id="launcher-title" maxlength="30" required autocomplete="off" />
+        </label>
+        <label>
+          网址
+          <input id="launcher-url" type="text" placeholder="https://example.com" required autocomplete="off" />
+        </label>
+        <label>
+          分组
+          <input id="launcher-group" maxlength="20" placeholder="常用网站" autocomplete="off" />
+        </label>
+        <div class="dialog-actions">
+          <button id="launcher-delete" class="dialog-danger" type="button">删除</button>
+          <span class="grow"></span>
+          <button id="launcher-cancel" type="button">取消</button>
+          <button class="dialog-primary" type="submit">保存</button>
+        </div>
       </form>
+    </dialog>
 
-      <!-- Clock -->
-      <section class="card clock-card">
-        <p id="greeting" class="muted">你好</p>
-        <p id="clock" class="clock">--:--<span id="secs">:--</span></p>
-        <p id="date" class="date"></p>
-      </section>
-
+    <main class="wrap">
       <!-- Todoist -->
       <section class="card">
         <header class="card-head">
@@ -97,15 +136,6 @@
           <span id="trend-range" class="dim small">近 7 天</span>
         </header>
         <div id="trend-body"><p class="muted small">加载中…</p></div>
-      </section>
-
-      <!-- Top sites -->
-      <section class="card wide">
-        <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#34d399,#10b981)"></span>
-          <h2>常用网站</h2>
-        </header>
-        <div id="top-body" class="shortcuts"><p class="muted small">加载中…</p></div>
       </section>
 
       <!-- Bookmarks -->

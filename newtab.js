@@ -1,8 +1,27 @@
 "use strict";
 
 // ---------- storage ----------
+function storageGet(keys) {
+  return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+}
+function storageSet(data) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(data, () => {
+      if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+      else resolve();
+    });
+  });
+}
+function storageRemove(keys) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.remove(keys, () => {
+      if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+      else resolve();
+    });
+  });
+}
 function getCfg() {
-  return new Promise((res) => chrome.storage.local.get(["todoistToken", "ghUser", "ghToken", "vpsUrl", "city"], res));
+  return storageGet(["todoistToken", "ghUser", "ghToken", "vpsUrl", "city"]);
 }
 
 // ---------- helpers ----------
@@ -251,7 +270,7 @@ async function loadVps(url) {
   }
 }
 
-// ---------- browser: top sites + bookmarks ----------
+// ---------- browser shortcuts + bookmarks ----------
 function favi(url) {
   try {
     return chrome.runtime.getURL("_favicon/?pageUrl=" + encodeURIComponent(url) + "&size=32");
@@ -263,19 +282,185 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
-function loadTopSites() {
-  const body = $("top-body");
-  if (!chrome.topSites) { body.innerHTML = `<p class="muted small">不可用</p>`; return; }
-  chrome.topSites.get((sites) => {
-    if (!sites || !sites.length) { body.innerHTML = `<p class="muted small">暂无常用网站</p>`; return; }
-    body.innerHTML = "";
-    sites.slice(0, 14).forEach((s) => {
-      const a = el("a", "shortcut");
-      a.href = s.url;
-      a.title = s.title || s.url;
-      a.innerHTML = `<img src="${favi(s.url)}" alt=""><span>${esc(s.title || hostOf(s.url))}</span>`;
-      body.appendChild(a);
+const launcherState = { links: [], editing: false };
+
+function getTopSites() {
+  return new Promise((resolve) => {
+    if (!chrome.topSites) { resolve([]); return; }
+    chrome.topSites.get((sites) => resolve(sites || []));
+  });
+}
+
+function normalizeWebUrl(value) {
+  let url = value.trim();
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) url = "https://" + url;
+  const parsed = new URL(url);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("unsupported protocol");
+  return parsed.href;
+}
+
+function setLauncherBackground(value) {
+  const launcher = $("launcher");
+  if (value) launcher.style.setProperty("--launcher-image", `url(${JSON.stringify(value)})`);
+  else launcher.style.removeProperty("--launcher-image");
+}
+
+async function saveLauncherLinks() {
+  await storageSet({ quickLinks: launcherState.links, quickLinksReady: true });
+}
+
+function openLauncherEditor(link) {
+  $("launcher-dialog-title").textContent = link ? "编辑网站" : "添加网站";
+  $("launcher-id").value = link?.id || "";
+  $("launcher-title").value = link?.title || "";
+  $("launcher-url").value = link?.url || "";
+  $("launcher-group").value = link?.group || "常用网站";
+  $("launcher-delete").style.display = link ? "inline-block" : "none";
+  $("launcher-dialog").showModal();
+  $("launcher-title").focus();
+}
+
+function renderLaunchers() {
+  const body = $("launcher-groups");
+  body.innerHTML = "";
+  const groups = new Map();
+  launcherState.links.forEach((link) => {
+    const group = link.group || "常用网站";
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(link);
+  });
+
+  if (!groups.size) {
+    const empty = el("p", "launcher-empty");
+    empty.textContent = "还没有快捷入口，点击“编辑入口”后添加。";
+    body.appendChild(empty);
+    return;
+  }
+
+  groups.forEach((links, groupName) => {
+    const group = el("section", "launcher-group");
+    const heading = el("h2");
+    heading.textContent = groupName;
+    const items = el("div", "launcher-items");
+    links.forEach((link) => {
+      const a = el("a", "launcher-link");
+      a.href = link.url;
+      a.title = link.title + "\n" + link.url;
+
+      const icon = el("span", "launcher-favicon");
+      const fallback = el("span", "launcher-fallback");
+      fallback.textContent = (link.title || hostOf(link.url)).trim().slice(0, 1).toUpperCase();
+      const img = document.createElement("img");
+      img.src = favi(link.url);
+      img.alt = "";
+      img.addEventListener("load", () => (fallback.style.display = "none"));
+      img.addEventListener("error", () => (img.style.display = "none"));
+      icon.appendChild(fallback);
+      icon.appendChild(img);
+
+      const label = el("span", "launcher-label");
+      label.textContent = link.title;
+      a.appendChild(icon);
+      a.appendChild(label);
+      a.addEventListener("click", (event) => {
+        if (!launcherState.editing) return;
+        event.preventDefault();
+        openLauncherEditor(link);
+      });
+      items.appendChild(a);
     });
+    group.appendChild(heading);
+    group.appendChild(items);
+    body.appendChild(group);
+  });
+}
+
+async function backgroundDataUrl(file) {
+  const image = await createImageBitmap(file);
+  const scale = Math.min(1, 1920 / image.width, 1080 / image.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  image.close();
+  return canvas.toDataURL("image/webp", 0.82);
+}
+
+async function initLaunchers() {
+  const stored = await storageGet(["quickLinks", "quickLinksReady", "heroBackground"]);
+  if (stored.quickLinksReady) {
+    launcherState.links = Array.isArray(stored.quickLinks) ? stored.quickLinks : [];
+  } else {
+    const sites = await getTopSites();
+    launcherState.links = sites.slice(0, 14).map((site) => ({
+      id: crypto.randomUUID(),
+      title: site.title || hostOf(site.url),
+      url: site.url,
+      group: "常用网站",
+    }));
+    await saveLauncherLinks();
+  }
+  setLauncherBackground(stored.heroBackground);
+  renderLaunchers();
+
+  $("launcher-edit").addEventListener("click", () => {
+    launcherState.editing = !launcherState.editing;
+    $("launcher").classList.toggle("editing", launcherState.editing);
+    $("launcher-edit").textContent = launcherState.editing ? "完成" : "编辑入口";
+  });
+  $("launcher-add").addEventListener("click", () => openLauncherEditor(null));
+  $("launcher-cancel").addEventListener("click", () => $("launcher-dialog").close());
+  $("launcher-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const id = $("launcher-id").value;
+    const title = $("launcher-title").value.trim();
+    let url;
+    try {
+      url = normalizeWebUrl($("launcher-url").value);
+      $("launcher-url").setCustomValidity("");
+    } catch {
+      $("launcher-url").setCustomValidity("请输入有效的 http 或 https 网址");
+      $("launcher-url").reportValidity();
+      return;
+    }
+    const link = {
+      id: id || crypto.randomUUID(),
+      title,
+      url,
+      group: $("launcher-group").value.trim() || "常用网站",
+    };
+    const index = launcherState.links.findIndex((item) => item.id === id);
+    if (index >= 0) launcherState.links[index] = link;
+    else launcherState.links.push(link);
+    await saveLauncherLinks();
+    renderLaunchers();
+    $("launcher-dialog").close();
+  });
+  $("launcher-delete").addEventListener("click", async () => {
+    const id = $("launcher-id").value;
+    launcherState.links = launcherState.links.filter((link) => link.id !== id);
+    await saveLauncherLinks();
+    renderLaunchers();
+    $("launcher-dialog").close();
+  });
+
+  $("background-change").addEventListener("click", () => $("background-input").click());
+  $("background-input").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const value = await backgroundDataUrl(file);
+      await storageSet({ heroBackground: value });
+      setLauncherBackground(value);
+    } catch {
+      alert("背景保存失败，请换一张尺寸较小的图片。");
+    } finally {
+      event.target.value = "";
+    }
+  });
+  $("background-reset").addEventListener("click", async () => {
+    await storageRemove("heroBackground");
+    setLauncherBackground("");
   });
 }
 
@@ -336,8 +521,12 @@ function initSearch() {
     e.preventDefault();
     const q = input.value.trim();
     if (!q) return;
-    const isUrl = /^https?:\/\//i.test(q) || (!q.includes(" ") && /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(q));
-    location.href = isUrl ? (/^https?:/i.test(q) ? q : "https://" + q) : "https://www.bing.com/search?q=" + encodeURIComponent(q);
+    const isUrl =
+      /^https?:\/\//i.test(q) ||
+      /^localhost(?::\d+)?(?:\/\S*)?$/i.test(q) ||
+      /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:\/\S*)?$/.test(q) ||
+      (!q.includes(" ") && /^[\w-]+(\.[\w-]+)+(?:\/\S*)?$/.test(q));
+    location.href = isUrl ? normalizeWebUrl(q) : "https://www.bing.com/search?q=" + encodeURIComponent(q);
   });
 }
 
@@ -483,11 +672,11 @@ async function boot() {
   tick();
   setInterval(tick, 1000);
   initSearch();
+  await initLaunchers();
   const cfg = await getCfg();
   loadWeather(cfg.city);
   loadAiHot();
   loadTrending();
-  loadTopSites();
   loadBookmarks();
   loadBili();
   $("aihot-refresh").addEventListener("click", loadAiHot);
