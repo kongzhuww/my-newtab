@@ -999,7 +999,44 @@ body[data-page="daily"] .wrap { transform: translateY(0); }
 .srt-copy, .srt-clear { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
 .srt-copy { background: #a78bfa; border-color: transparent; color: #08121a; font-weight: 600; }
 .srt-copy:hover { background: #c4b5fd; }
-.srt-clear:hover { border-color: var(--border-strong); }.ms-tv { position: fixed; right: 20px; bottom: 80px; z-index: 56; background: #171310; border: 1px solid rgba(0,0,0,0.5); border-radius: 16px; padding: 10px; box-shadow: 0 20px 50px -16px rgba(0,0,0,0.8); }
+.srt-clear:hover { border-color: var(--border-strong); }
+.fo-toolbar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.fo-btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
+.fo-btn:hover { border-color: var(--border-strong); }
+.fo-summary { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.fo-item { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
+.fo-item.done { opacity: 0.55; }
+.fo-item-main { flex: 1; min-width: 0; }
+.fo-item-title { font-size: 13px; color: var(--heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fo-item-tags { font-size: 11px; color: var(--dim); margin-top: 3px; }
+.fo-item-match { font-size: 12px; color: #34d399; flex: none; }
+.fo-item-nomatch { font-size: 12px; color: var(--dim); flex: none; }
+.fo-move { padding: 6px 12px; border-radius: 8px; border: 0; background: #34d399; color: #08121a; font-size: 12px; font-weight: 600; cursor: pointer; flex: none; }
+.fo-move:disabled { opacity: 0.5; cursor: default; }
+.fo-status { font-size: 12px; flex: none; }
+.fo-status.ok { color: #34d399; }
+.fo-status.err { color: #fb7185; }
+.fo-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }
+.fo-col-title { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.fo-folders { display: flex; flex-direction: column; gap: 6px; align-self: start; }
+.fo-folder { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+.fo-folder.over { border-color: #f59e0b; background: rgba(245,158,11,0.12); color: #fbbf24; }
+.fo-videos { min-width: 0; }
+.fo-item.dragging { opacity: 0.45; }
+.fo-sel { flex: none; max-width: 200px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; }
+.fo-hint { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 6px; font-weight: 400; vertical-align: middle; background: var(--surface); color: var(--dim); }
+.fo-hint.match { background: rgba(52,211,153,0.15); color: #34d399; }
+.fo-hint.bayes { background: rgba(56,189,248,0.15); color: #7dd3fc; }
+.fo-src-sel { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; max-width: 220px; }
+.fo-cover { width: 64px; height: 40px; border-radius: 6px; object-fit: cover; flex: none; border: 1px solid var(--border); }
+.fo-cover-link { flex: none; line-height: 0; }
+.fo-title-link { color: var(--heading); text-decoration: none; }
+.fo-title-link:hover { color: #7dd3fc; text-decoration: underline; }
+.fo-del { flex: none; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--dim); font-size: 12px; cursor: pointer; }
+.fo-del:hover { color: #fb7185; border-color: #fb7185; }
+.fo-pager { display: flex; align-items: center; gap: 10px; margin-top: 14px; justify-content: center; }
+.fo-page-num { font-size: 12px; color: var(--muted); }
+.fo-btn:disabled { opacity: 0.4; cursor: default; }.ms-tv { position: fixed; right: 20px; bottom: 80px; z-index: 56; background: #171310; border: 1px solid rgba(0,0,0,0.5); border-radius: 16px; padding: 10px; box-shadow: 0 20px 50px -16px rgba(0,0,0,0.8); }
 .ms-tv-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: #fcd34d; font-size: 11px; font-weight: 600; }
 .ms-tv-head button { border: 0; background: rgba(0,0,0,0.4); color: #fff; border-radius: 999px; width: 20px; height: 20px; cursor: pointer; }
 .ms-tv-screen { width: 320px; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #000; display: grid; place-items: center; }

@@ -186,11 +186,24 @@
             <p id="srt-status" class="srt-status"></p>
             <textarea id="srt-output" class="srt-output" rows="12" placeholder="转换后的纯文本会显示在这里，直接复制即可…"></textarea>
             <div class="srt-actions">
-              <button id="srt-copy" class="srt-copy" type="button">📋 复制文本</button>
+              <button id="srt-copy" class="srt-copy" type="button">📋 复制正文</button>
+              <button id="srt-copy-all" class="srt-copy" type="button">📋 复制全部</button>
               <button id="srt-clear" class="srt-clear" type="button">清空</button>
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- 文件夹整理 -->
+      <section class="card wide">
+        <header class="card-head">
+          <span class="bar" style="background: linear-gradient(180deg,#f59e0b,#f472b6)"></span>
+          <h2>文件夹整理</h2>
+          <span class="grow"></span>
+          <span id="fo-mode-label" class="muted small">手动批准</span>
+          <button id="fo-refresh" class="icon-btn" title="重新分析">↻</button>
+        </header>
+        <div id="fo-body"><p class="muted small">加载中…</p></div>
       </section>
 
       <!-- AI HOT -->

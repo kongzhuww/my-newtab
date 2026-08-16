@@ -1683,21 +1683,37 @@ function extractBvid(text) {
   const m = String(text || "").match(/BV[0-9A-Za-z]{10}/);
   return m ? m[0] : "";
 }
+function fmtBiliDate(ts) {
+  const d = new Date(ts * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 async function fetchBiliSubtitle(bvid) {
   const view = await biliJson(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`);
   if (!view?.data?.cid) return { ok: false, reason: "视频不存在，或 B站未登录" };
-  const cid = view.data.cid;
-  const title = view.data.title || bvid;
+  const d = view.data;
+  const cid = d.cid;
   const { ik, sk } = await getWbiKeys();
   const q = encWbi({ bvid, cid }, ik, sk);
   const pj = await biliJson(`https://api.bilibili.com/x/player/wbi/v2?${q}`);
   const subs = pj?.data?.subtitle?.subtitles || [];
-  if (!subs.length) return { ok: false, reason: "该视频没有 AI 字幕（可先到 B站视频页开启一次字幕）" };
+  if (!subs.length) return { ok: false, reason: "该视频没有 AI 字幕" };
   const subJ = await biliJson("https:" + subs[0].subtitle_url);
   const body = subJ?.body || [];
-  const text = body.map((b) => (b.content || "").trim()).filter(Boolean).join("\n");
-  if (!text.trim()) return { ok: false, reason: "字幕内容为空" };
-  return { ok: true, title, text, lineCount: text.split("\n").length };
+  const lines = body.map((b) => (b.content || "").trim()).filter(Boolean);
+  if (!lines.length) return { ok: false, reason: "字幕内容为空" };
+
+  const meta = [];
+  meta.push("标题：" + (d.title || bvid));
+  if (d.owner?.name) meta.push("UP主：" + d.owner.name);
+  if (d.pubdate) meta.push("发布时间：" + fmtBiliDate(d.pubdate));
+  if (d.stat) meta.push("播放：" + (d.stat.view ?? 0).toLocaleString() + " · 点赞：" + (d.stat.like ?? 0).toLocaleString());
+  if (d.tname) meta.push("分区：" + d.tname);
+  meta.push("链接：https://www.bilibili.com/video/" + bvid);
+
+  const bodyText = lines.join("\n");
+  const headText = meta.join("\n") + "\n\n———— 字幕正文 ————\n\n";
+  return { ok: true, title: d.title || bvid, bodyText, headText, lineCount: lines.length };
 }
 
 function srtToPlainText(srt) {
@@ -1753,6 +1769,7 @@ function initSrtTool() {
   const output = $("srt-output");
   const status = $("srt-status");
   if (!drop || !output) return;
+  let lastBody = "", lastHead = "";
   const setStatus = (msg, cls) => {
     if (!status) return;
     status.textContent = msg || "";
@@ -1795,24 +1812,333 @@ function initSrtTool() {
       setStatus("正在抓取 B站字幕…", "busy");
       try {
         const r = await fetchBiliSubtitle(bvid);
-        if (r.ok) { output.value = r.text; setStatus(`✅ 已提取 ${r.lineCount} 行字幕（${r.title}）`, "ok"); }
+        if (r.ok) {
+          lastBody = r.bodyText; lastHead = r.headText;
+          output.value = r.headText + r.bodyText;
+          setStatus(`✅ 已提取 ${r.lineCount} 行字幕（${r.title}）`, "ok");
+        }
         else setStatus("⚠️ " + r.reason, "err");
       } catch (err) { setStatus("❌ 抓取失败：" + err.message, "err"); }
     } else {
       setStatus("⚠️ 没识别到 B站视频链接，请从左边拖视频卡片过来", "err");
     }
   });
-  $("srt-copy").addEventListener("click", async () => {
-    if (!output.value) return;
+  const doCopy = async (text, btn) => {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(output.value);
-      const btn = $("srt-copy"); const old = btn.textContent;
+      await navigator.clipboard.writeText(text);
+      const old = btn.textContent;
       btn.textContent = "✅ 已复制";
       setTimeout(() => (btn.textContent = old), 1500);
     } catch { setStatus("❌ 复制失败", "err"); }
-  });
-  $("srt-clear").addEventListener("click", () => { output.value = ""; setStatus("", ""); });
+  };
+  $("srt-copy").addEventListener("click", () => doCopy(lastBody || output.value, $("srt-copy")));
+  $("srt-copy-all").addEventListener("click", () => doCopy((lastHead || "") + (lastBody || output.value), $("srt-copy-all")));
+  $("srt-clear").addEventListener("click", () => { output.value = ""; lastBody = ""; lastHead = ""; setStatus("", ""); });
 }
+
+// ---------- folder organizer (按视频标签自动分类到收藏夹) ----------
+const BILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+async function getBiliJct() {
+  try {
+    const c = await chrome.cookies.get({ url: "https://bilibili.com", name: "bili_jct" });
+    return c?.value || "";
+  } catch { return ""; }
+}
+
+async function moveBiliVideo(srcId, tarId, aid, mid) {
+  const csrf = await getBiliJct();
+  if (!csrf) return { ok: false, reason: "取不到 csrf（bili_jct）" };
+  try {
+    const body = new URLSearchParams({
+      src_media_id: String(srcId),
+      tar_media_id: String(tarId),
+      mid: String(mid),
+      resources: aid + ":2",
+      platform: "web",
+      csrf,
+    });
+    const r = await fetch("https://api.bilibili.com/x/v3/fav/resource/move", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        "User-Agent": BILI_UA,
+        Referer: "https://www.bilibili.com/",
+        Origin: "https://www.bilibili.com",
+      },
+      body: body.toString(),
+    });
+    const j = await r.json();
+    if (j.code === 0) return { ok: true };
+    return { ok: false, reason: j.message || ("code " + j.code) };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+async function deleteBiliVideo(fid, aid) {
+  const csrf = await getBiliJct();
+  if (!csrf) return { ok: false, reason: "取不到 csrf（bili_jct）" };
+  try {
+    const body = new URLSearchParams({
+      csrf,
+      rid: String(aid),
+      type: "2",
+      del_media_ids: String(fid),
+    });
+    const r = await fetch("https://api.bilibili.com/x/v3/fav/resource/deal", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        "User-Agent": BILI_UA,
+        Referer: "https://www.bilibili.com/",
+        Origin: "https://www.bilibili.com",
+      },
+      body: body.toString(),
+    });
+    const j = await r.json();
+    if (j.code === 0) return { ok: true };
+    return { ok: false, reason: j.message || ("code " + j.code) };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+// 朴素贝叶斯分类器：从手动移动的历史里学习「视频特征 → 收藏夹」
+const foModel = { classes: {} };
+
+function bayesFeatures(media, tags) {
+  const feats = [];
+  (tags || []).forEach((t) => { if (t) feats.push("t:" + t); });
+  if (media.tname) feats.push("z:" + media.tname);
+  if (media.upper?.name) feats.push("u:" + media.upper.name);
+  return feats;
+}
+
+function bayesTrain(folderId, features) {
+  if (!folderId || !features.length) return;
+  if (!foModel.classes[folderId]) foModel.classes[folderId] = { words: {}, total: 0, docs: 0 };
+  const c = foModel.classes[folderId];
+  features.forEach((w) => { c.words[w] = (c.words[w] || 0) + 1; c.total++; });
+  c.docs++;
+  chrome.storage.local.set({ foBayes: foModel.classes });
+}
+
+function bayesPredict(features) {
+  const ids = Object.keys(foModel.classes);
+  if (!ids.length || !features.length) return null;
+  const vocab = new Set();
+  Object.values(foModel.classes).forEach((c) => Object.keys(c.words).forEach((w) => vocab.add(w)));
+  const vocabSize = vocab.size || 1;
+  const totalDocs = Object.values(foModel.classes).reduce((s, c) => s + c.docs, 0);
+  const scores = {};
+  for (const fid of ids) {
+    const c = foModel.classes[fid];
+    let score = Math.log(c.docs / totalDocs);
+    features.forEach((w) => {
+      score += Math.log(((c.words[w] || 0) + 1) / (c.total + vocabSize));
+    });
+    scores[fid] = score;
+  }
+  // softmax 转置信度（百分比）
+  const maxScore = Math.max(...Object.values(scores));
+  let sum = 0;
+  const exps = {};
+  ids.forEach((fid) => { exps[fid] = Math.exp(scores[fid] - maxScore); sum += exps[fid]; });
+  let best = null, bestConf = -1;
+  ids.forEach((fid) => { const p = exps[fid] / sum; if (p > bestConf) { bestConf = p; best = fid; } });
+  return { id: best, confidence: Math.round(bestConf * 100) };
+}
+
+function bayesStats() {
+  let docs = 0, words = 0;
+  Object.values(foModel.classes).forEach((c) => { docs += c.docs; words += c.total; });
+  return { docs, words, classes: Object.keys(foModel.classes).length };
+}
+
+function showBayesDetail() {
+  const entries = Object.entries(foModel.classes);
+  if (!entries.length) { alert("贝叶斯还没学过任何分类。手动移动几个视频后就有数据了。"); return; }
+  const lines = entries.map(([fid, c]) => {
+    const top = Object.entries(c.words).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([w, n]) => `${w.replace(/^[tzu]:/, "")}×${n}`).join("、");
+    return `「收藏夹#${fid}」已学 ${c.docs} 次，特征词：${top || "无"}`;
+  }).join("\n");
+  alert("贝叶斯学习情况：\n\n" + lines + "\n\n提示：收藏夹 id 对应的名字见下拉框（可把 id 换成名字，下次我改好显示）");
+}
+
+function manageFoAliases() {
+  const cur = foState.aliases;
+  const hint = "每行一个文件夹别名，格式：\n文件夹名：别名1、别名2\n\n例如：\n教程：学习、教学、课程\n搞笑：鬼畜、沙雕";
+  const v = prompt(hint, Object.entries(cur).map(([k, arr]) => `${k}：${arr.join("、")}`).join("\n"));
+  if (v === null) return;
+  const next = {};
+  v.split(/\r?\n/).forEach((line) => {
+    const [k, ...rest] = line.split(/[：:]/);
+    if (!k || !k.trim()) return;
+    const aliases = (rest.join(":") || "").split(/[、,，]/).map((s) => s.trim()).filter(Boolean);
+    next[k.trim()] = aliases;
+  });
+  foState.aliases = next;
+  chrome.storage.local.set({ foAliases: next }, () => loadFolderOrganizer());
+}
+
+async function loadFolderOrganizer() {
+  const body = $("fo-body");
+  if (!body) return;
+  body.innerHTML = '<p class="muted small">加载中…</p>';
+  try {
+    const nav = await biliJson("https://api.bilibili.com/x/web-interface/nav");
+    if (!nav?.data?.isLogin) { body.innerHTML = '<p class="notice">未登录 B 站，请先登录 <a href="https://www.bilibili.com" target="_blank" rel="noreferrer">bilibili.com</a>。</p>'; return; }
+    const mid = nav.data.mid;
+    foState.mid = mid;
+    const fj = await biliJson(`https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${mid}`);
+    const folders = fj?.data?.list || [];
+    if (!folders.length) { body.innerHTML = '<p class="muted small">没有收藏夹。</p>'; return; }
+    const srcFolder = folders.find((f) => f.id === foState.srcId) || folders.find((f) => /默认/.test(f.title)) || folders[0];
+    foState.srcId = srcFolder.id;
+    const stored = await storageGet(["foAliases", "foAuto", "foBayes"]);
+    foState.aliases = stored.foAliases || {};
+    foState.auto = !!stored.foAuto;
+    foModel.classes = stored.foBayes || {};
+    const PS = 10;
+    const rj = await biliJson(`https://api.bilibili.com/x/v3/fav/resource/list?media_id=${srcFolder.id}&pn=${foState.page}&ps=${PS}&platform=web`);
+    const medias = rj?.data?.medias || [];
+    const total = rj?.data?.info?.media_count ?? medias.length;
+    const targetFolders = folders.filter((f) => f.id !== srcFolder.id);
+
+    body.innerHTML = '<p class="muted small">分析中（获取每个视频的标签）…</p>';
+    const results = [];
+    for (const m of medias) {
+      let tags = [];
+      try {
+        const tj = await biliJson(`https://api.bilibili.com/x/tag/archive/tags?bvid=${m.bvid}`);
+        tags = (tj?.data || []).map((t) => t.tag_name);
+      } catch {}
+      let match = null;
+      for (const f of targetFolders) {
+        const names = [f.title, ...(foState.aliases[f.title] || [])];
+        if (tags.some((t) => names.some((n) => n && (n === t || t.includes(n) || n.includes(t))))) { match = f; break; }
+      }
+      const feats = bayesFeatures(m, tags);
+      const bayesRes = match ? null : bayesPredict(feats);
+      results.push({ media: m, tags, match, feats, bayesRes });
+    }
+    renderFolderOrganizer(results, srcFolder, targetFolders, folders, total, PS);
+  } catch (e) {
+    body.innerHTML = '<p class="muted small">加载失败：' + esc(e.message) + '</p>';
+  }
+}
+
+function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, total, ps) {
+  const body = $("fo-body");
+  body.innerHTML = "";
+  const matched = results.filter((r) => r.match);
+  const modeRow = el("div", "fo-toolbar");
+
+  const srcSel = el("select", "fo-src-sel");
+  srcSel.title = "选择要整理的收藏夹";
+  srcSel.innerHTML = allFolders.map((f) => `<option value="${f.id}"${f.id === srcFolder.id ? " selected" : ""}>📁 ${esc(f.title)}</option>`).join("");
+  srcSel.addEventListener("change", () => {
+    foState.srcId = srcSel.value;
+    foState.page = 1;
+    loadFolderOrganizer();
+  });
+  modeRow.appendChild(srcSel);
+
+  const modeBtn = el("button", "fo-btn");
+  modeBtn.textContent = foState.auto ? "🔄 切换为手动批准" : "⚡ 切换为自动(full access)";
+  modeBtn.addEventListener("click", async () => {
+    foState.auto = !foState.auto;
+    await chrome.storage.local.set({ foAuto: foState.auto });
+    loadFolderOrganizer();
+  });
+  modeRow.appendChild(modeBtn);
+  const aliasBtn = el("button", "fo-btn", "🏷 管理文件夹别名");
+  aliasBtn.addEventListener("click", manageFoAliases);
+  modeRow.appendChild(aliasBtn);
+  const learnBtn = el("button", "fo-btn", "🧠 查看学习内容");
+  learnBtn.addEventListener("click", showBayesDetail);
+  modeRow.appendChild(learnBtn);
+  body.appendChild(modeRow);
+
+  const stats = bayesStats();
+  const totalPages = Math.max(1, Math.ceil(total / ps));
+  body.appendChild(el("p", "fo-summary", `「${esc(srcFolder.title)}」共 ${total} 个视频（第 ${foState.page}/${totalPages} 页）· 可分类 ${matched.length} 个 · 🧠已学习 ${stats.docs} 次`));
+
+  if (!results.length) { body.appendChild(el("p", "muted small", "默认收藏夹是空的。")); return; }
+
+  results.forEach((r) => {
+    const row = el("div", "fo-item");
+    const aid = r.media.id || r.media.aid;
+    let hint;
+    if (r.match) hint = `<span class="fo-hint match">✓ 匹配</span>`;
+    else if (r.bayesRes) hint = `<span class="fo-hint bayes">🧠AI建议 ${r.bayesRes.confidence}%</span>`;
+    else hint = `<span class="fo-hint">无建议</span>`;
+    const cover = (r.media.cover || "").replace(/^http:/, "https:");
+    const bvid = r.media.bvid || "";
+    const videoUrl = bvid ? `https://www.bilibili.com/video/${bvid}` : "#";
+    row.innerHTML =
+      `<a class="fo-cover-link" href="${videoUrl}" target="_blank" rel="noreferrer"><img class="fo-cover" loading="lazy" referrerpolicy="no-referrer" src="${esc(cover)}" alt=""></a>` +
+      `<div class="fo-item-main"><div class="fo-item-title"><a class="fo-title-link" href="${videoUrl}" target="_blank" rel="noreferrer" title="打开视频">${esc(r.media.title)}</a> ${hint}</div>` +
+      `<div class="fo-item-tags">标签：${(r.tags.map(esc).join("、") || "无")}</div></div>`;
+
+    const sel = el("select", "fo-sel");
+    const defId = r.match?.id || r.bayesRes?.id;
+    sel.innerHTML = `<option value="">— 选择收藏夹 —</option>` + targetFolders.map((f) => `<option value="${f.id}"${defId === f.id ? " selected" : ""}>${esc(f.title)}</option>`).join("");
+
+    const delBtn = el("button", "fo-del");
+    delBtn.textContent = "✕";
+    delBtn.title = "取消收藏（从当前收藏夹删除）";
+    delBtn.addEventListener("click", async () => {
+      if (!confirm(`确认取消收藏？将从「${srcFolder.title}」删除「${r.media.title}」`)) return;
+      delBtn.disabled = true; delBtn.textContent = "…";
+      const res = await deleteBiliVideo(srcFolder.id, aid);
+      if (res.ok) { row.remove(); }
+      else { delBtn.disabled = false; delBtn.textContent = "✕"; delBtn.title = "删除失败:" + res.reason; alert("删除失败：" + res.reason); }
+    });
+
+    const btn = el("button", "fo-move");
+    btn.textContent = "移动";
+    const doMove = async () => {
+      const fid = sel.value;
+      if (!fid) { btn.textContent = "先选收藏夹"; setTimeout(() => (btn.textContent = "移动"), 1500); return; }
+      btn.disabled = true; btn.textContent = "移动中…";
+      const res = await moveBiliVideo(srcFolder.id, fid, aid, foState.mid);
+      if (res.ok) { row.classList.add("done"); btn.textContent = "✅"; btn.disabled = true; sel.disabled = true; bayesTrain(fid, r.feats); }
+      else { btn.textContent = "重试(" + res.reason + ")"; btn.disabled = false; }
+    };
+    btn.addEventListener("click", doMove);
+    if (foState.auto && r.match) { sel.disabled = true; doMove(); }
+
+    row.appendChild(delBtn);
+    row.appendChild(sel);
+    row.appendChild(btn);
+    body.appendChild(row);
+  });
+
+  if (totalPages > 1) {
+    const pager = el("div", "fo-pager");
+    const prevBtn = el("button", "fo-btn", "‹ 上一页");
+    prevBtn.disabled = foState.page <= 1;
+    prevBtn.addEventListener("click", () => { if (foState.page > 1) { foState.page--; foState.pendingScroll = true; loadFolderOrganizer(); } });
+    const nextBtn = el("button", "fo-btn", "下一页 ›");
+    nextBtn.disabled = foState.page >= totalPages;
+    nextBtn.addEventListener("click", () => { if (foState.page < totalPages) { foState.page++; foState.pendingScroll = true; loadFolderOrganizer(); } });
+    pager.appendChild(prevBtn);
+    pager.appendChild(el("span", "fo-page-num", `${foState.page} / ${totalPages}`));
+    pager.appendChild(nextBtn);
+    body.appendChild(pager);
+  }
+
+  if (foState.pendingScroll) {
+    foState.pendingScroll = false;
+    const card = $("fo-body")?.closest("section");
+    if (card) card.scrollIntoView({ block: "start" });
+  }
+}
+
+const foState = { aliases: {}, auto: false, mid: "", srcId: null, page: 1, pendingScroll: false };
 
 // ---------- boot ----------
 async function boot() {
@@ -1834,6 +2160,7 @@ async function boot() {
   setInterval(loadTraffic, 300000);
   loadBiliWorkbench();
   initSrtTool();
+  loadFolderOrganizer();
   if (cfg.vpsUrl) setInterval(() => loadVps(cfg.vpsUrl), 15000);
   $("todo-refresh").addEventListener("click", () => {
     if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);
