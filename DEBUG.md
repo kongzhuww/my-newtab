@@ -1,7 +1,7 @@
 # LogicWeaver 新标签页 · AI 调试手册
 
 > 给后续调试这个项目的 AI / 开发者看。先读这一份，能省掉大量猜测时间。
-> 最后更新：版本 1.4.6（含性能优化，尚未提交）。
+> 最后更新：版本 1.5.1（DeepSeek 对话：多轮聊天 + 工作区/会话栏 + 提问弹窗）。
 
 ---
 
@@ -268,21 +268,43 @@ git push origin main
 
 ---
 
-## 12. AI 视频分析（接入本机 DeepSeek Harness）
+## 12. DeepSeek 对话（接入本机 DeepSeek Harness）
 
-> 「B站收藏夹」和「AI HOT」之间的独立卡片。粘贴视频字幕/文案 txt → 点「✨ 分析价值」→ 交给本机 harness 的 deepseek-v4-pro 分析「这个视频有什么价值」。
+> 「B站收藏夹」和「AI HOT」之间的独立卡片，是一个完整的多轮聊天：粘贴视频字幕让模型分析、或随便聊，还能切换模型/推理强度。会话持久化在 `chrome.storage.local` 的 `aiChatSessionId`。思维（reasoning）流式时不刷屏，只显示一个固定高度的「思考中」指示，结束后折叠成可展开的「思考过程」。
 
-**数据流**：`newtab.js` 点按钮 → 长连接 Port `aiAnalyze` 发消息 → `background.js` 调 harness HTTP API → 返回分析文本 → 渲染到 `#ai-analyze-output`。用 Port 而非 `sendMessage`，是为了保持 service worker 存活（避免长分析被 30s 空闲策略回收）。
+**数据流**：全程用 `chrome.runtime.sendMessage`（`type:"aiChat"`），**由页面驱动轮询**——每次都是短促的一次请求/响应，SW 被唤醒做一件事即返回，即使 SW 在两次轮询之间被回收也无所谓（下次 sendMessage 会重新唤醒）。`op` 有：
+- `sync`（页面加载，拉 history + 模型列表）、`models`、`selectModel`、`newSession`；
+- `send`（`{text}` → `session.prompt`）、`poll`（`{sinceSeq}` → 拉 `seq > sinceSeq` 的新事件，返回 `{events, done}`）。
+
+**性能关键**：`sync` 只保留 `user/message`/`assistant/message`/`step/end`/`turn/end` 四类结构化事件，**丢弃 `assistant/chunk`**——大会话里 chunk 占 99%+（如「网页插件」4.5 万条里 4.5 万是 chunk），全渲染会卡死页面；渲染只用 `assistant/message` 的最终 content。同时 sync 返回 `maxSeq`，页面据此设置 `sinceSeq`，避免因丢 chunk 导致后续 `poll` 重复拉旧事件。
+
+不要用长连接 Port 保持 SW 存活——实测 Chrome/Edge 的 MV3 里 SW 仍可能被回收导致端口断开，表现为「连接中断」。页面驱动轮询最稳。
 
 **harness HTTP API（关键：dot 分隔，不是斜杠）**：
-- `POST http://127.0.0.1:3080/api/session.create`，payload `{}`（可选 `cwd`）→ 返回 `{sessionId, agentPreset}`。
+- `POST http://127.0.0.1:3080/api/session.create`，payload `{}` → `{sessionId, agentPreset}`。
 - `POST /api/session.prompt`，payload `{sessionId, mode:"queue", content:[{type:"text", text}]}`。
-- `POST /api/session.history`，payload `{sessionId}` → 返回 `{events:[{event:{type,seq,data}}], hasMore}`。
+- `POST /api/session.history`，payload `{sessionId, beforeSeq?}` → `{events:[{event:{type,seq,data}}], hasMore}`。**返回最新的约 4.5 万条事件**（`hasMore=true` 表示还有更早的），`beforeSeq` 可往前翻页拿更早事件。前端用 `seq` 过滤增量。
+- `POST /api/session.models`，payload `{sessionId}` → `{current:{provider,model,reasoningEffort}, routable, groups:[{id,name,models:[{id,name,reasoning:{efforts:[{id,name}],defaultEffort}}]}], failures}`。
+- `POST /api/session.selectModel`，payload `{sessionId, provider, model, reasoningEffort?}` → `{selected}`。
 - 请求 body：`{"type":"client-request","rpcId":"<uuid>","method":"session.prompt","payload":{...}}`；响应 `{"type":"server-response","rpcId","result":{ok,value|error}}`。
-- 最终文本在 `assistant/message` 事件的 `data.message.content[].text`（取 `type==="text"` 的块拼接）；完成标志是 `turn/end` 事件的 `data.reason.kind === "completed"`。
+
+**事件结构（渲染依赖）**：
+- `user/message`：用户消息，内容在 **`data.content[].text`**（⚠️ 不是 `data.message.content`，那是 assistant 的路径；读错会渲染出空气泡）。且同一轮里系统会注入多条 `user/message`（`data.source.kind` = `plugin`/`skill-catalog` 等），**只渲染 `source.kind === "user"` 的那条**，其它跳过。
+- `assistant/chunk`：流式块。`chunk.type` 有 `block-start`（带 `blockType`）、`text-delta`、`reasoning-delta`（**思维流**）、`tool-call-delta`、`block-end`（`block:{type,text}`）、`usage`、`finish`。
+- `assistant/message`：权威最终消息（`data.message.content[]`，块 `type` 有 `text`/`reasoning`/`tool-call`）。
+- `turn/end`：本轮结束，`data.reason.kind === "completed"` 为正常。
+
+**工作区/会话栏**：`workspace.list` → `{items:[{workspaceId,path,title,sessionIds[]}]}`（工作区=文件夹）；`session.list` → `{items:[{sessionId,updatedAt,running,blank,cwd,projections.values.title}]}`。不在任何 workspace 的会话归「未分组」。切换会话 = 改 `aiChatSessionId` 后重新 `sync`。
+
+**ask_user_question（提问弹窗，不走 history 轮询）**：提问是 **mux WebSocket 帧**，不在 `session.history` 里。流程：
+1. 页面直接连 `ws://127.0.0.1:3080/api/events.mux`（DNR 规则要把 `websocket` 也纳入 resourceTypes，且 regexFilter 要匹配 `ws://`，不是只匹配 `http://`），连上即回放 `session/subscribed` + 未决的 `question/requested`/`approval/requested`。
+2. 收到 `{type:"server-request", rpcId, method:"question/requested", payload:{type, sessionId, questions:[{id,question,header,options:[{label,description}],multiSelect}]}}`，只处理 `payload.sessionId === 当前会话` 的那条。
+3. 应答：`POST /api/respond`，body = `{type:"client-response", rpcId, result:{ok:true, value:{sessionId, answer:{answers:[{id,selected:[label...],custom?}]}}}}`；跳过 = `result:{ok:false, error:{code:"cancelled",message,details:{}}}`。返回 `{accepted:true|false}`（`false` 且 reason=`not-pending` 表示该提问已自动失效，比如 mux 断连过）。
+
+**注意**：提问会自动失效——mux 连接断开后，未决提问会变成 `not-pending`。所以扩展里 WebSocket 要尽量保持常连（页面打开期间一直连着），断了自动重连。
 
 **Host fence（最关键的坑）**：harness 只接受 `Origin` 头为 `http://127.0.0.1:3080`（或无 Origin）的请求，其它 Origin（含 `chrome-extension://`、`http://localhost:3080`）一律 403。浏览器 fetch 会自动带 `chrome-extension://<id>`，所以：
 1. `background.js` 用 **declarativeNetRequest 动态规则**（id 1001）把发往 harness 的请求 `Origin` 改写成 `http://127.0.0.1:3080`；
 2. `manifest.json` 的 `host_permissions` 加了 `http://127.0.0.1:3080/*` 和 `http://localhost:3080/*`，配合 SW fetch 绕过 CORS（harness 不返回任何 CORS 头）。
 
-**调试**：卡片报「403」→ DNR 规则没生效，到 `edge://extensions` 点「重新加载」（新增 `declarativeNetRequest` 权限必须重载）再开新标签页。卡片报「连接失败/中断」→ 确认 harness 在跑（`dsh web`，端口 3080）。
+**调试**：卡片报「403」→ DNR 规则没生效，到 `edge://extensions` 点「重新加载」（新增 `declarativeNetRequest` 权限必须重载）再开新标签页。卡片报「连接失败/中断」→ 确认 harness 在跑（`dsh web`，端口 3080）。看不到思维 → 检查「推理强度」是否被切成「思维：关」。

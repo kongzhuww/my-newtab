@@ -205,23 +205,51 @@
         </div>
       </section>
 
-      <!-- AI 视频分析 -->
+      <!-- DeepSeek 对话 -->
       <section class="card wide">
         <header class="card-head">
           <span class="bar" style="background: linear-gradient(180deg,#c084fc,#818cf8)"></span>
-          <h2>AI 视频分析</h2>
+          <h2>DeepSeek 对话</h2>
           <span class="grow"></span>
-          <span id="ai-analyze-status" class="dim small"></span>
+          <button id="ai-chat-new" class="ai-chat-new" type="button" title="开启新对话">＋ 新对话</button>
         </header>
-        <textarea id="ai-analyze-input" class="ai-analyze-input" rows="5" placeholder="粘贴视频的字幕 / 文案 txt 文本…"></textarea>
-        <div class="ai-analyze-actions">
-          <button id="ai-analyze-run" class="ai-analyze-run" type="button">✨ 分析价值</button>
-          <button id="ai-analyze-clear" class="ai-analyze-clear" type="button">清空</button>
-        </div>
-        <div id="ai-analyze-output" class="ai-analyze-output">
-          <p class="muted small">粘贴一段视频文本，让 DeepSeek 分析这个视频有什么价值。</p>
+        <div class="ai-chat-layout">
+          <aside id="ai-chat-sidebar" class="ai-chat-sidebar">
+            <p class="ai-chat-sidebar-title">工作区</p>
+            <div id="ai-chat-sessions"><p class="muted small">加载中…</p></div>
+          </aside>
+          <div class="ai-chat-main">
+            <div id="ai-chat-list" class="ai-chat-list">
+              <p class="muted small">正在连接 DeepSeek…</p>
+            </div>
+            <form id="ai-chat-form" class="ai-chat-form">
+              <div class="ai-chat-inputbar">
+                <textarea id="ai-chat-input" class="ai-chat-input" rows="1" placeholder="给智能体发消息…"></textarea>
+                <select id="ai-chat-model" class="ai-chat-model-pill" title="切换模型"></select>
+                <select id="ai-chat-effort" class="ai-chat-effort-pill" title="推理强度"></select>
+                <button id="ai-chat-send" class="ai-chat-send" type="submit" title="发送">➤</button>
+              </div>
+            </form>
+            <div id="ai-chat-status" class="ai-chat-status"></div>
+          </div>
         </div>
       </section>
+
+      <!-- ask_user_question 提问弹窗 -->
+      <div id="ai-chat-question" class="ai-chat-question-backdrop" hidden>
+        <div class="ai-chat-question-modal">
+          <div class="ai-chat-question-head">
+            <span id="ai-chat-question-title" class="dim small"></span>
+            <button id="ai-chat-question-close" class="ai-chat-question-close" type="button" title="关闭">✕</button>
+          </div>
+          <h3 id="ai-chat-question-text"></h3>
+          <div id="ai-chat-question-body"></div>
+          <div class="ai-chat-question-actions">
+            <button id="ai-chat-question-skip" type="button">跳过本题</button>
+            <button id="ai-chat-question-submit" type="button">提交</button>
+          </div>
+        </div>
+      </div>
 
       <!-- AI HOT -->
       <section class="card wide">

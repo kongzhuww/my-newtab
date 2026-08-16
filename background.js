@@ -72,10 +72,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // ============================================================
-// AI 视频分析：把文本交给本机 DeepSeek Harness（dsh web）分析
+// DeepSeek 对话：把新标签页里的聊天接到本机 DeepSeek Harness（dsh web）
 // 说明：
 //   - harness 跑在 http://127.0.0.1:3080（dsh web）
-//   - 对外暴露 RPC：POST /api/session.create | session.prompt | session.history
+//   - 对外暴露 RPC：POST /api/session.create | session.prompt | session.history | session.models | session.selectModel
 //   - 服务端有个 "Host fence"：只接受 Origin === http://127.0.0.1:3080（或无 Origin）的请求；
 //     浏览器 fetch 会自动带 chrome-extension:// 的 Origin，会被 403 拒绝。
 //     所以用 declarativeNetRequest 把发往 harness 的请求 Origin 改写成 http://127.0.0.1:3080。
@@ -100,30 +100,39 @@ async function ensureHarnessDnrRule() {
             requestHeaders: [{ header: "origin", operation: "set", value: origin }],
           },
           condition: {
-            regexFilter: `^${u.protocol}//${host}/`,
-            resourceTypes: ["xmlhttprequest", "other"],
+            regexFilter: `^(https?|wss?)://${host}/`,
+            resourceTypes: ["xmlhttprequest", "other", "websocket"],
           },
         },
       ],
     });
   } catch (err) {
-    console.warn("ai-analyze: declarativeNetRequest rule failed", err);
+    console.warn("ai-chat: declarativeNetRequest rule failed", err);
   }
 }
-ensureHarnessDnrRule();
+const dnrReady = ensureHarnessDnrRule();
 
 // harness RPC：POST /api/<method>，payload 为直接参数（非 {args} 包装）
 async function harnessRpc(method, payload) {
-  const res = await fetch(`${HARNESS_BASE}/api/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      type: "client-request",
-      rpcId: crypto.randomUUID(),
-      method,
-      payload,
-    }),
-  });
+  await dnrReady; // 确保 Origin 改写规则已注册，避免扩展刚重载时首请求被 fence 403
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000); // 15s 超时，防止单个请求挂起拖住轮询
+  let res;
+  try {
+    res = await fetch(`${HARNESS_BASE}/api/${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "client-request",
+        rpcId: crypto.randomUUID(),
+        method,
+        payload,
+      }),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     if (res.status === 403) {
       throw new Error("harness 拒绝请求（403）——Origin 头未通过 Host fence，通常意味着 declarativeNetRequest 改写规则未生效，请在 edge://extensions 重新加载扩展后重试");
@@ -138,83 +147,166 @@ async function harnessRpc(method, payload) {
   return result ? result.value : undefined;
 }
 
-function buildAnalysisPrompt(text) {
-  return [
-    "你是视频内容分析助手。下面是一段视频的字幕/文案文本。",
-    "请直接分析并输出这个视频的价值，按以下结构用中文回答：",
-    "1. 视频讲了什么（一句话概括主题）",
-    "2. 核心观点或知识点",
-    "3. 对观众的价值（能学到什么、解决什么问题、适合谁看）",
-    "4. 一句话总结",
-    "",
-    "要求：直接输出分析结果，不要使用任何工具，不要读写文件，不要联网搜索。",
-    "",
-    "视频文本如下：",
-    "--- 开始 ---",
-    text,
-    "--- 结束 ---",
-  ].join("\n");
+// 应答 client-response（用于回答 / 取消 ask_user_question 或审批）
+async function harnessRespond(message) {
+  await dnrReady;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  let res;
+  try {
+    res = await fetch(`${HARNESS_BASE}/api/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(message),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) throw new Error(`respond HTTP ${res.status}`);
+  const receipt = await res.json();
+  if (receipt && receipt.accepted === false) {
+    throw new Error(`应答被拒绝：${receipt.reason}`);
+  }
+  return receipt;
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const AI_CHAT_SESSION_KEY = "aiChatSessionId";
+
+// 持久会话：整个聊天共用一个 harness session（支持多轮、切换模型）
+async function ensureChatSession() {
+  const stored = await chrome.storage.local.get(AI_CHAT_SESSION_KEY);
+  if (stored && stored[AI_CHAT_SESSION_KEY]) return stored[AI_CHAT_SESSION_KEY];
+  return await resetChatSession();
 }
 
-async function analyzeWithHarness(text) {
+async function resetChatSession() {
   const created = await harnessRpc("session.create", {});
   const sessionId = created && created.sessionId;
   if (!sessionId) throw new Error("harness 未返回 sessionId");
-
-  await harnessRpc("session.prompt", {
-    sessionId,
-    mode: "queue",
-    content: [{ type: "text", text: buildAnalysisPrompt(text) }],
-  });
-
-  const deadline = Date.now() + 10 * 60 * 1000; // 最多等 10 分钟
-  let finalText = "";
-  while (Date.now() < deadline) {
-    await sleep(1500);
-    const hist = await harnessRpc("session.history", { sessionId });
-    const events = (hist && hist.events) || [];
-    for (const entry of events) {
-      const ev = entry && entry.event;
-      if (!ev) continue;
-      if (ev.type === "assistant/message") {
-        const blocks = ev.data && ev.data.message && ev.data.message.content;
-        if (Array.isArray(blocks)) {
-          finalText = blocks
-            .filter((b) => b && b.type === "text")
-            .map((b) => b.text || "")
-            .join("\n");
-        }
-      } else if (ev.type === "turn/end") {
-        const reason = ev.data && ev.data.reason && ev.data.reason.kind;
-        if (reason === "completed") {
-          return { ok: true, text: finalText || "（模型没有返回文字内容）" };
-        }
-        if (reason) {
-          return { ok: false, error: `分析被终止（${reason}）` };
-        }
-      }
-    }
-  }
-  return { ok: false, error: "分析超时（超过 10 分钟）" };
+  await chrome.storage.local.set({ [AI_CHAT_SESSION_KEY]: sessionId });
+  return sessionId;
 }
 
-// 用长连接 Port 接收分析请求：打开的 Port 会保持 service worker 存活，
-// 避免长分析过程中 SW 被 30s 空闲策略回收。
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== "aiAnalyze") return;
-  port.onMessage.addListener((message) => {
-    if (!message || message.type !== "run") return;
-    const text = String(message.text || "").trim();
-    if (!text) {
-      port.postMessage({ ok: false, error: "文本为空" });
-      return;
-    }
-    analyzeWithHarness(text)
-      .then((result) => port.postMessage(result))
-      .catch((err) => port.postMessage({ ok: false, error: (err && err.message) || String(err) }));
-  });
+// 一次性请求/响应操作（由页面短促调用，SW 每次被唤醒做一件事即返回）
+async function handleChatOp(op, payload) {
+  if (op === "sync") {
+    const sessionId = await ensureChatSession();
+    const sinceSeq = Number(payload && payload.sinceSeq) || -1;
+    const [hist, models] = await Promise.all([
+      harnessRpc("session.history", { sessionId }),
+      harnessRpc("session.models", { sessionId }),
+    ]);
+    const all = ((hist && hist.events) || []).filter((e) => e.event && e.event.seq > sinceSeq);
+    // 只保留渲染所需的结构化事件，跳过海量 assistant/chunk 流式块（大会话几十万条会卡死页面）
+    const KEEP = new Set(["user/message", "assistant/message", "step/end", "turn/end"]);
+    const events = all.filter((e) => KEEP.has(e.event.type));
+    let maxSeq = sinceSeq;
+    for (const e of all) if (e.event.seq > maxSeq) maxSeq = e.event.seq;
+    return {
+      ok: true,
+      sessionId,
+      events,
+      maxSeq,
+      hasMore: !!(hist && hist.hasMore),
+      models,
+      current: models.current,
+    };
+  }
+  if (op === "models") {
+    const sessionId = await ensureChatSession();
+    const models = await harnessRpc("session.models", { sessionId });
+    return { ok: true, sessionId, models, current: models.current };
+  }
+  if (op === "selectModel") {
+    const sessionId = await ensureChatSession();
+    await harnessRpc("session.selectModel", {
+      sessionId,
+      provider: payload.provider,
+      model: payload.model,
+      reasoningEffort: payload.reasoningEffort || undefined,
+    });
+    const models = await harnessRpc("session.models", { sessionId });
+    return { ok: true, models, current: models.current };
+  }
+  if (op === "newSession") {
+    const sessionId = await resetChatSession();
+    const models = await harnessRpc("session.models", { sessionId });
+    return { ok: true, sessionId, models, current: models.current };
+  }
+  if (op === "send") {
+    const sessionId = await ensureChatSession();
+    const text = String((payload && payload.text) || "").trim();
+    if (!text) return { ok: false, error: "文本为空" };
+    await harnessRpc("session.prompt", {
+      sessionId,
+      mode: "queue",
+      content: [{ type: "text", text }],
+    });
+    return { ok: true };
+  }
+  if (op === "poll") {
+    const sessionId = await ensureChatSession();
+    const sinceSeq = Number(payload && payload.sinceSeq) || -1;
+    const hist = await harnessRpc("session.history", { sessionId });
+    const events = ((hist && hist.events) || []).filter((e) => e.event && e.event.seq > sinceSeq);
+    let done = false;
+    for (const e of events) if (e.event.type === "turn/end") done = true;
+    return { ok: true, events, done };
+  }
+  if (op === "sessions") {
+    const [slist, wlist, stored] = await Promise.all([
+      harnessRpc("session.list", {}),
+      harnessRpc("workspace.list", {}),
+      chrome.storage.local.get(AI_CHAT_SESSION_KEY),
+    ]);
+    return {
+      ok: true,
+      sessions: (slist && slist.items) || [],
+      workspaces: (wlist && wlist.items) || [],
+      currentSessionId: stored[AI_CHAT_SESSION_KEY] || "",
+    };
+  }
+  if (op === "switchSession") {
+    const sid = String((payload && payload.sessionId) || "");
+    if (!sid) return { ok: false, error: "缺少 sessionId" };
+    await chrome.storage.local.set({ [AI_CHAT_SESSION_KEY]: sid });
+    return { ok: true, sessionId: sid };
+  }
+  if (op === "answerQuestion") {
+    if (!payload.rpcId) return { ok: false, error: "缺少 rpcId" };
+    await harnessRespond({
+      type: "client-response",
+      rpcId: payload.rpcId,
+      result: {
+        ok: true,
+        value: { sessionId: payload.sessionId, answer: payload.answer },
+      },
+    });
+    return { ok: true };
+  }
+  if (op === "skipQuestion") {
+    if (!payload.rpcId) return { ok: false, error: "缺少 rpcId" };
+    await harnessRespond({
+      type: "client-response",
+      rpcId: payload.rpcId,
+      result: {
+        ok: false,
+        error: { code: "cancelled", message: "the user skipped this question", details: {} },
+      },
+    });
+    return { ok: true };
+  }
+  return { ok: false, error: `未知操作：${op}` };
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message && message.type === "aiChat" && message.op) {
+    handleChatOp(message.op, message)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: (err && err.message) || String(err) }));
+    return true; // 异步 sendResponse
+  }
 });
+
+

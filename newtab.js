@@ -1759,7 +1759,11 @@ async function fetchBiliSubtitle(bvid) {
   try {
     subJ = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(subBuf));
   } catch {
-    subJ = JSON.parse(new TextDecoder("gb18030").decode(subBuf));
+    try {
+      subJ = JSON.parse(new TextDecoder("gb18030").decode(subBuf));
+    } catch {
+      subJ = JSON.parse(new TextDecoder("big5").decode(subBuf));
+    }
   }
   const body = subJ?.body || [];
   const lines = body.map((b) => (b.content || "").trim()).filter(Boolean);
@@ -1767,6 +1771,7 @@ async function fetchBiliSubtitle(bvid) {
 
   const meta = [];
   meta.push("标题：" + (d.title || bvid));
+  meta.push("字幕轨道：" + subs.map((s) => s.lan_doc || s.lan || "未知").join(" / ") + "（已选：" + (pick.lan_doc || pick.lan || "默认") + "）");
   if (d.owner?.name) meta.push("UP主：" + d.owner.name);
   if (d.pubdate) meta.push("发布时间：" + fmtBiliDate(d.pubdate));
   if (d.stat) meta.push("播放：" + (d.stat.view ?? 0).toLocaleString() + " · 点赞：" + (d.stat.like ?? 0).toLocaleString());
@@ -2659,73 +2664,690 @@ function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, to
 
 const foState = { aliases: {}, auto: false, mid: "", srcId: null, page: 1, pendingScroll: false, groups: {} };
 
-// ---------- boot ----------
-// ---------- AI 视频分析 ----------
-function initAiAnalyze() {
-  const input = $("ai-analyze-input");
-  const run = $("ai-analyze-run");
-  const clear = $("ai-analyze-clear");
-  const output = $("ai-analyze-output");
-  const status = $("ai-analyze-status");
-  if (!input || !run || !output) return;
+// ---------- DeepSeek 对话（接入本机 harness，多轮 + 流式思维 + 切换模型） ----------
+function initAiChat() {
+  const list = $("ai-chat-list");
+  const form = $("ai-chat-form");
+  const input = $("ai-chat-input");
+  const send = $("ai-chat-send");
+  const modelSel = $("ai-chat-model");
+  const effortSel = $("ai-chat-effort");
+  const newBtn = $("ai-chat-new");
+  const statusEl = $("ai-chat-status");
+  const sessionsEl = $("ai-chat-sessions");
+  const qBackdrop = $("ai-chat-question");
+  const qTitle = $("ai-chat-question-title");
+  const qText = $("ai-chat-question-text");
+  const qBody = $("ai-chat-question-body");
+  const qSkip = $("ai-chat-question-skip");
+  const qSubmit = $("ai-chat-question-submit");
+  const qClose = $("ai-chat-question-close");
+  if (!list || !form || !input || !send) return;
 
-  run.addEventListener("click", () => {
-    const text = input.value.trim();
-    if (!text) {
-      output.innerHTML = `<p class="notice">请先粘贴视频的字幕 / 文案文本。</p>`;
+  const chat = {
+    sessionId: null,
+    sinceSeq: -1,
+    lastSentText: null,
+    messages: [], // { role: "user"|"assistant", text?, blocks?, streaming? }
+    streaming: false,
+    models: null,
+    current: null,
+    stats: { turns: 0, steps: 0, inTok: 0, outTok: 0 },
+  };
+
+  // ---- 渲染辅助 ----
+  const blocksOf = (msg) => msg.blocks || [];
+  const textBlocks = (msg) => blocksOf(msg).filter((b) => b.kind === "text");
+  const thinkBlocks = (msg) => blocksOf(msg).filter((b) => b.kind === "reasoning");
+  const toolBlocks = (msg) => blocksOf(msg).filter((b) => b.kind === "tool-call");
+
+  function scrollBottom() { list.scrollTop = list.scrollHeight; }
+
+  function buildUserEl(msg) {
+    const wrap = el("div", "ai-chat-msg user");
+    const bubble = el("div", "ai-chat-bubble");
+    bubble.textContent = msg.text || "";
+    wrap.appendChild(bubble);
+    return wrap;
+  }
+
+  function buildAssistantEl(msg) {
+    const wrap = el("div", "ai-chat-msg assistant");
+    const refs = { thinking: null, thinkingBody: null, text: null, tools: null };
+    const think = thinkBlocks(msg).map((b) => b.text || "").join("\n");
+    if (msg.streaming) {
+      // 流式中：只显示一个固定高度的「思考中」指示，不刷屏显示思维全文
+      const live = el("div", "ai-chat-thinking ai-chat-thinking-live");
+      const label = el("span", "ai-chat-thinking-label");
+      label.textContent = "💭 思考中";
+      live.appendChild(label);
+      wrap.appendChild(live);
+      refs.thinking = live;
+    } else if (think) {
+      const details = el("details", "ai-chat-thinking");
+      const summary = el("summary");
+      summary.textContent = "💭 思考过程";
+      const body = el("div", "ai-chat-thinking-body");
+      body.textContent = think;
+      details.appendChild(summary);
+      details.appendChild(body);
+      wrap.appendChild(details);
+      refs.thinking = details;
+      refs.thinkingBody = body;
+    }
+    const answer = textBlocks(msg).map((b) => b.text || "").join("\n");
+    if (answer) {
+      const textEl = el("div", "ai-chat-bubble");
+      textEl.textContent = answer;
+      wrap.appendChild(textEl);
+      refs.text = textEl;
+    } else if (msg.streaming) {
+      const textEl = el("div", "ai-chat-bubble ai-chat-bubble-typing");
+      textEl.textContent = "正在输入…";
+      wrap.appendChild(textEl);
+      refs.text = textEl;
+    }
+    const tools = toolBlocks(msg);
+    if (tools.length) {
+      const t = el("div", "ai-chat-tools");
+      t.textContent = "🛠 " + tools.map((x) => x.name || "工具").join(" · ");
+      wrap.appendChild(t);
+      refs.tools = t;
+    }
+    return { root: wrap, refs };
+  }
+
+  function appendMessage(msg) {
+    const dom = msg.role === "user" ? { root: buildUserEl(msg), refs: {} } : buildAssistantEl(msg);
+    msg._dom = dom;
+    list.appendChild(dom.root);
+    scrollBottom();
+    return dom;
+  }
+
+  // 把模型内容同步到 DOM
+  function updateAssistantDom(msg) {
+    const dom = msg._dom;
+    if (!dom) return;
+    if (!msg.streaming) {
+      // 已结束：整块重建（思考从「思考中」指示切换成可展开的完整思考）
+      const fresh = buildAssistantEl(msg);
+      list.replaceChild(fresh.root, dom.root);
+      msg._dom = fresh;
+      scrollBottom();
       return;
     }
-    run.disabled = true;
-    run.textContent = "⏳ 分析中…";
-    if (status) status.textContent = "调用 DeepSeek…";
-    output.innerHTML = `<p class="muted small">正在分析，可能需要几十秒…</p>`;
+    // 流式中：只更新正文/工具，思考保持「思考中」指示（固定高度）
+    const answer = textBlocks(msg).map((b) => b.text || "").join("\n");
+    if (dom.refs.text) {
+      dom.refs.text.textContent = answer || "正在输入…";
+      dom.refs.text.classList.toggle("ai-chat-bubble-typing", !answer);
+    }
+    const tools = toolBlocks(msg);
+    if (tools.length && !dom.refs.tools) {
+      const fresh = buildAssistantEl(msg);
+      list.replaceChild(fresh.root, dom.root);
+      msg._dom = fresh;
+      scrollBottom();
+      return;
+    }
+    if (dom.refs.tools) dom.refs.tools.textContent = "🛠 " + tools.map((x) => x.name || "工具").join(" · ");
+    scrollBottom();
+  }
 
-    let settled = false;
-    const finish = () => {
-      run.disabled = false;
-      run.textContent = "✨ 分析价值";
-    };
+  function showError(text) {
+    const wrap = el("div", "ai-chat-msg system");
+    const b = el("div", "ai-chat-bubble");
+    b.textContent = text;
+    b.style.borderColor = "rgba(251,113,133,0.5)";
+    b.style.color = "var(--muted)";
+    wrap.appendChild(b);
+    list.appendChild(wrap);
+    scrollBottom();
+  }
 
-    const port = chrome.runtime.connect({ name: "aiAnalyze" });
-    port.onMessage.addListener((res) => {
-      if (settled) return;
-      settled = true;
-      if (res && res.ok) {
-        const pre = el("pre", "ai-analyze-result");
-        pre.textContent = res.text;
-        output.innerHTML = "";
-        output.appendChild(pre);
-        if (status) status.textContent = "完成";
-      } else {
-        output.innerHTML = `<p class="notice">分析失败：${esc((res && res.error) || "未知错误")}</p>`;
-        if (status) status.textContent = "失败";
+  function setBusy(busy) {
+    send.disabled = busy;
+    if (modelSel) modelSel.disabled = busy;
+    if (effortSel) effortSel.disabled = busy;
+    if (newBtn) newBtn.disabled = busy;
+  }
+
+  // ---- 事件折叠 ----
+  function streamingAssistant() {
+    const m = chat.messages[chat.messages.length - 1];
+    return (m && m.role === "assistant" && m.streaming) ? m : null;
+  }
+
+  function startAssistant() {
+    const m = { role: "assistant", blocks: [], streaming: true };
+    chat.messages.push(m);
+    appendMessage(m);
+    return m;
+  }
+
+  function applyChunk(msg, chunk) {
+    const idx = chunk.index;
+    switch (chunk.type) {
+      case "block-start":
+        msg.blocks[idx] = { kind: chunk.blockType || "text", text: "" };
+        break;
+      case "text-delta": {
+        const b = msg.blocks[idx] || { kind: "text", text: "" };
+        b.kind = "text";
+        b.text = (b.text || "") + (chunk.text || "");
+        msg.blocks[idx] = b;
+        break;
       }
-      finish();
-      try { port.disconnect(); } catch {}
-    });
-    port.onDisconnect.addListener(() => {
-      if (settled) return;
-      settled = true;
-      output.innerHTML = `<p class="notice">连接中断：DeepSeek Harness 可能已停止，或扩展后台被回收。请确认 harness 正在运行（dsh web）后重试。</p>`;
-      if (status) status.textContent = "连接中断";
-      finish();
-    });
+      case "reasoning-delta": {
+        const b = msg.blocks[idx] || { kind: "reasoning", text: "" };
+        b.kind = "reasoning";
+        b.text = (b.text || "") + (chunk.text || "");
+        msg.blocks[idx] = b;
+        break;
+      }
+      case "tool-call-delta": {
+        const b = msg.blocks[idx] || { kind: "tool-call", name: "", argsRaw: "" };
+        b.kind = "tool-call";
+        b.name = chunk.name || b.name || "工具";
+        b.argsRaw = (b.argsRaw || "") + (chunk.argumentsDelta || "");
+        msg.blocks[idx] = b;
+        break;
+      }
+      case "block-end": {
+        const blk = chunk.block || {};
+        msg.blocks[idx] = {
+          kind: blk.type || "text",
+          text: blk.text || "",
+          name: blk.name,
+          argsRaw: blk.argsRaw || blk.args || "",
+        };
+        break;
+      }
+    }
+  }
+
+  function applyEvent(ev) {
+    switch (ev.type) {
+      case "user/message": {
+        const data = ev.data || {};
+        // 只显示真正的用户消息，跳过系统注入的 runtime context / skill 目录等
+        if (data.source && data.source.kind && data.source.kind !== "user") break;
+        const content = data.content;
+        const text = Array.isArray(content)
+          ? content.filter((c) => c && c.type === "text").map((c) => c.text || "").join("\n")
+          : "";
+        if (!text) break;
+        if (chat.lastSentText !== null && chat.lastSentText === text) {
+          chat.lastSentText = null; // 本地已显示，跳过
+          break;
+        }
+        const m = { role: "user", text };
+        chat.messages.push(m);
+        appendMessage(m);
+        break;
+      }
+      case "assistant/chunk": {
+        let m = streamingAssistant();
+        if (!m) m = startAssistant();
+        applyChunk(m, ev.data && ev.data.chunk);
+        updateAssistantDom(m);
+        break;
+      }
+      case "assistant/message": {
+        const content = ev.data && ev.data.message && ev.data.message.content;
+        let m = streamingAssistant();
+        if (!m) m = startAssistant();
+        if (Array.isArray(content)) {
+          m.blocks = content.map((c) => ({
+            kind: c.type || "text",
+            text: c.text || "",
+            name: c.name,
+            argsRaw: c.argsRaw || c.args || "",
+          }));
+        }
+        m.streaming = false;
+        updateAssistantDom(m);
+        if (ev.data && ev.data.usage) {
+          chat.stats.inTok += ev.data.usage.inputTokens || 0;
+          chat.stats.outTok += ev.data.usage.outputTokens || 0;
+        }
+        break;
+      }
+      case "step/end": {
+        chat.stats.steps += 1;
+        break;
+      }
+      case "turn/end": {
+        const reason = ev.data && ev.data.reason && ev.data.reason.kind;
+        if (ev.data && ev.data.turn) chat.stats.turns = Math.max(chat.stats.turns, ev.data.turn);
+        const m = streamingAssistant();
+        if (m) {
+          m.streaming = false;
+          updateAssistantDom(m);
+        }
+        if (reason && reason !== "completed") {
+          const err = { role: "assistant", blocks: [{ kind: "text", text: `（这一轮被终止：${reason}）` }], streaming: false };
+          chat.messages.push(err);
+          appendMessage(err);
+        }
+        break;
+      }
+    }
+  }
+
+  function renderStatus() {
+    if (!statusEl) return;
+    const s = chat.stats;
+    const cur = chat.current || {};
+    let modelName = cur.model || "";
+    const groups = (chat.models && chat.models.groups) || [];
+    for (const g of groups) {
+      for (const m of g.models || []) {
+        if (g.id === cur.provider && m.id === cur.model) modelName = m.name || m.id;
+      }
+    }
+    const parts = [];
+    if (s.turns) parts.push(`${s.turns} 轮`);
+    if (s.steps) parts.push(`${s.steps} 步`);
+    if (modelName) parts.push(`${modelName}${cur.reasoningEffort ? " · " + cur.reasoningEffort : ""}`);
+    if (s.outTok) parts.push(`输出 ${s.outTok} tok`);
+    statusEl.textContent = parts.join(" ｜ ");
+  }
+
+  function applyEvents(events) {
+    for (const e of events) {
+      if (!e || !e.event) continue;
+      if (e.event.seq > chat.sinceSeq) chat.sinceSeq = e.event.seq;
+      applyEvent(e.event);
+    }
+    renderStatus();
+  }
+
+  // ---- 模型下拉 ----
+  function renderModelSelects() {
+    const groups = (chat.models && chat.models.groups) || [];
+    const cur = chat.current || (chat.models && chat.models.current) || {};
+    modelSel.innerHTML = "";
+    for (const g of groups) {
+      const og = document.createElement("optgroup");
+      og.label = g.name || g.id;
+      for (const m of g.models || []) {
+        const opt = document.createElement("option");
+        opt.value = g.id + "::" + m.id;
+        opt.textContent = m.name || m.id;
+        if (g.id === cur.provider && m.id === cur.model) opt.selected = true;
+        og.appendChild(opt);
+      }
+      modelSel.appendChild(og);
+    }
+    effortSel.innerHTML = "";
+    let curModel = null;
+    for (const g of groups) {
+      for (const m of g.models || []) {
+        if (g.id === cur.provider && m.id === cur.model) curModel = m;
+      }
+    }
+    const efforts = (curModel && curModel.reasoning && curModel.reasoning.efforts) || [];
+    const curEffort = cur.reasoningEffort || (curModel && curModel.reasoning && curModel.reasoning.defaultEffort);
+    if (efforts.length) {
+      for (const ef of efforts) {
+        const opt = document.createElement("option");
+        opt.value = ef.id;
+        opt.textContent = ef.name || ef.id;
+        if (ef.id === curEffort) opt.selected = true;
+        effortSel.appendChild(opt);
+      }
+    } else {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "默认";
+      effortSel.appendChild(opt);
+    }
+  }
+
+  async function selectModel(provider, model, reasoningEffort) {
     try {
-      port.postMessage({ type: "run", text });
+      const res = await chrome.runtime.sendMessage({
+        type: "aiChat", op: "selectModel", provider, model, reasoningEffort,
+      });
+      if (res && res.ok) {
+        chat.models = res.models;
+        chat.current = res.current;
+        renderModelSelects();
+        renderStatus();
+      } else {
+        showError("切换模型失败：" + ((res && res.error) || "未知错误"));
+      }
     } catch (e) {
-      settled = true;
-      output.innerHTML = `<p class="notice">无法连接 DeepSeek Harness（${esc((e && e.message) ? e.message : String(e))}）。请确认本机 harness 正在运行（dsh web）。</p>`;
-      if (status) status.textContent = "连接失败";
-      finish();
+      showError("切换模型失败：" + ((e && e.message) || String(e)));
+    }
+  }
+
+  // ---- 会话栏（工作区 / 会话列表） ----
+  function sessionTitle(s) {
+    return (s.projections && s.projections.values && s.projections.values.title) || s.title || "";
+  }
+
+  function sessionBtn(s, currentId) {
+    const btn = el("button", "ai-chat-sess" + (s.sessionId === currentId ? " on" : ""));
+    btn.type = "button";
+    btn.title = sessionTitle(s) || "(无标题)";
+    const dot = el("span", "dot" + (s.running ? " running" : ""));
+    const tt = el("span", "tt");
+    tt.textContent = sessionTitle(s) || "(无标题)";
+    btn.appendChild(dot);
+    btn.appendChild(tt);
+    btn.addEventListener("click", () => switchSession(s.sessionId));
+    return btn;
+  }
+
+  function renderSidebar(data) {
+    if (!sessionsEl) return;
+    const sessions = data.sessions || [];
+    const workspaces = data.workspaces || [];
+    const currentId = data.currentSessionId || "";
+    const byId = new Map(sessions.map((s) => [s.sessionId, s]));
+    const placed = new Set();
+    sessionsEl.innerHTML = "";
+
+    for (const ws of workspaces) {
+      const head = el("div", "ai-chat-ws");
+      head.textContent = "📁 " + (ws.title || ws.path || "未命名");
+      sessionsEl.appendChild(head);
+      const ids = (ws.sessionIds || [])
+        .map((id) => byId.get(id))
+        .filter(Boolean)
+        .filter((s) => !s.blank || s.sessionId === currentId)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      for (const s of ids) {
+        placed.add(s.sessionId);
+        sessionsEl.appendChild(sessionBtn(s, currentId));
+      }
+    }
+
+    const uncategorized = sessions
+      .filter((s) => !placed.has(s.sessionId) && (!s.blank || s.sessionId === currentId))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    if (uncategorized.length) {
+      const head = el("div", "ai-chat-ws");
+      head.textContent = "未分组";
+      sessionsEl.appendChild(head);
+      for (const s of uncategorized) sessionsEl.appendChild(sessionBtn(s, currentId));
+    }
+  }
+
+  async function loadSidebar() {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "aiChat", op: "sessions" });
+      if (res && res.ok) renderSidebar(res);
+    } catch (e) {
+      // 侧栏加载失败不阻塞主流程
+    }
+  }
+
+  async function switchSession(sessionId) {
+    if (!sessionId || sessionId === chat.sessionId || chat.streaming) return;
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "aiChat", op: "switchSession", sessionId });
+      if (!res || !res.ok) throw new Error((res && res.error) || "切换失败");
+      chat.sessionId = sessionId;
+      chat.sinceSeq = -1;
+      chat.lastSentText = null;
+      chat.messages = [];
+      chat.stats = { turns: 0, steps: 0, inTok: 0, outTok: 0 };
+      list.innerHTML = `<p class="muted small">加载会话…</p>`;
+      const sync = await chrome.runtime.sendMessage({ type: "aiChat", op: "sync", sinceSeq: -1 });
+      if (sync && sync.ok) {
+        chat.models = sync.models;
+        chat.current = sync.current;
+        renderModelSelects();
+        list.innerHTML = "";
+        applyEvents(sync.events || []);
+        if (sync.maxSeq != null) chat.sinceSeq = sync.maxSeq;
+        if (chat.messages.length === 0) list.innerHTML = `<p class="muted small">空会话，发条消息开始吧。</p>`;
+      } else {
+        showError("加载会话失败：" + ((sync && sync.error) || "未知错误"));
+      }
+      loadSidebar();
+    } catch (e) {
+      showError("切换会话失败：" + ((e && e.message) || String(e)));
+    }
+  }
+
+  // ---- ask_user_question 提问 ----
+  let pendingQuestion = null; // { rpcId, sessionId, questions }
+  let muxSocket = null;
+  let muxTimer = null;
+
+  function hideQuestion() {
+    pendingQuestion = null;
+    if (qBackdrop) qBackdrop.hidden = true;
+  }
+
+  function showQuestion(q) {
+    pendingQuestion = q;
+    if (!qBackdrop || !qBody) return;
+    const questions = q.questions || [];
+    if (qTitle) qTitle.textContent = (questions[0] && questions[0].header) || "提问";
+    if (qText) qText.textContent = questions[0] ? questions[0].question : "";
+    qBody.innerHTML = "";
+    for (const item of questions) {
+      const itemEl = el("div", "ai-chat-q-item");
+      const qLabel = el("div");
+      qLabel.textContent = item.question || "";
+      itemEl.appendChild(qLabel);
+      const selected = new Set();
+      const options = item.options || [];
+      for (const opt of options) {
+        const optEl = el("div", "ai-chat-q-opt");
+        const no = el("span", "no");
+        const txt = el("div");
+        txt.innerHTML = `<div>${esc(opt.label)}</div>${opt.description ? `<div class="ai-chat-q-desc">${esc(opt.description)}</div>` : ""}`;
+        optEl.appendChild(no);
+        optEl.appendChild(txt);
+        optEl.addEventListener("click", () => {
+          if (item.multiSelect) {
+            if (selected.has(opt.label)) {
+              selected.delete(opt.label); optEl.classList.remove("sel"); no.textContent = "";
+            } else {
+              selected.add(opt.label); optEl.classList.add("sel"); no.textContent = "✓";
+            }
+          } else {
+            itemEl.querySelectorAll(".ai-chat-q-opt").forEach((o) => {
+              o.classList.remove("sel"); o.querySelector(".no").textContent = "";
+            });
+            selected.clear();
+            selected.add(opt.label);
+            optEl.classList.add("sel");
+            no.textContent = "✓";
+          }
+        });
+        itemEl.appendChild(optEl);
+      }
+      const custom = el("textarea", "ai-chat-q-custom");
+      custom.rows = 1;
+      custom.placeholder = "📝 输入你的答案（可选）";
+      itemEl.appendChild(custom);
+      itemEl._data = { item, selected, custom };
+      qBody.appendChild(itemEl);
+    }
+    qBackdrop.hidden = false;
+  }
+
+  async function submitQuestion() {
+    const q = pendingQuestion;
+    if (!q) return;
+    const answers = [];
+    qBody.querySelectorAll(".ai-chat-q-item").forEach((itemEl) => {
+      const d = itemEl._data;
+      const customText = (d.custom.value || "").trim();
+      const ans = { id: d.item.id, selected: Array.from(d.selected) };
+      if (customText) ans.custom = customText;
+      answers.push(ans);
+    });
+    hideQuestion();
+    try {
+      const res = await chrome.runtime.sendMessage({
+        type: "aiChat", op: "answerQuestion",
+        rpcId: q.rpcId, sessionId: q.sessionId, answer: { answers },
+      });
+      if (!res || !res.ok) showError("回答提交失败：" + ((res && res.error) || "未知错误"));
+    } catch (e) {
+      showError("回答提交失败：" + ((e && e.message) || String(e)));
+    }
+  }
+
+  async function skipQuestion() {
+    const q = pendingQuestion;
+    if (!q) return;
+    hideQuestion();
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "aiChat", op: "skipQuestion", rpcId: q.rpcId });
+      if (!res || !res.ok) showError("跳过失败：" + ((res && res.error) || "未知错误"));
+    } catch (e) {
+      showError("跳过失败：" + ((e && e.message) || String(e)));
+    }
+  }
+
+  function connectMux() {
+    if (muxSocket || muxTimer) return;
+    try {
+      muxSocket = new WebSocket("ws://127.0.0.1:3080/api/events.mux");
+      muxSocket.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        if (msg && msg.type === "server-request" && msg.method === "question/requested") {
+          const p = msg.payload || {};
+          if (p.sessionId && p.sessionId === chat.sessionId) {
+            showQuestion({ rpcId: msg.rpcId, sessionId: p.sessionId, questions: p.questions || [] });
+          }
+        }
+      };
+      muxSocket.onclose = () => {
+        muxSocket = null;
+        muxTimer = setTimeout(() => { muxTimer = null; connectMux(); }, 5000);
+      };
+      muxSocket.onerror = () => { try { muxSocket && muxSocket.close(); } catch {} };
+    } catch (e) {
+      muxTimer = setTimeout(() => { muxTimer = null; connectMux(); }, 5000);
+    }
+  }
+
+  // ---- 发送 ----
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function autoResize() {
+    input.style.height = "auto";
+    input.style.height = Math.min(160, input.scrollHeight) + "px";
+  }
+
+  // 由页面驱动轮询：每次用短促的 sendMessage 唤醒 SW 做一件事即返回，
+  // 即使 SW 在两次轮询之间被回收也不影响（下次 sendMessage 会重新唤醒它）。
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text || chat.streaming) return;
+    input.value = "";
+    autoResize();
+
+    const userMsg = { role: "user", text };
+    chat.messages.push(userMsg);
+    appendMessage(userMsg);
+    chat.lastSentText = text;
+
+    chat.streaming = true;
+    setBusy(true);
+    try {
+      const sent = await chrome.runtime.sendMessage({ type: "aiChat", op: "send", text, sinceSeq: chat.sinceSeq });
+      if (!sent || !sent.ok) throw new Error((sent && sent.error) || "发送失败");
+
+      const deadline = Date.now() + 10 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await sleep(800);
+        const p = await chrome.runtime.sendMessage({ type: "aiChat", op: "poll", sinceSeq: chat.sinceSeq });
+        if (!p || !p.ok) throw new Error((p && p.error) || "轮询失败");
+        applyEvents(p.events || []);
+        if (p.done) break;
+      }
+      if (Date.now() >= deadline) showError("生成超时（超过 10 分钟）。");
+    } catch (e) {
+      showError("对话出错：" + ((e && e.message) || String(e)) + "。请确认本机 harness 正在运行（dsh web）。");
+    } finally {
+      chat.streaming = false;
+      setBusy(false);
+    }
+  }
+
+  // ---- 初始化 / 事件绑定 ----
+  if (qSubmit) qSubmit.addEventListener("click", submitQuestion);
+  if (qSkip) qSkip.addEventListener("click", skipQuestion);
+  if (qClose) qClose.addEventListener("click", hideQuestion);
+  form.addEventListener("submit", (ev) => { ev.preventDefault(); sendMessage(); });
+  input.addEventListener("input", autoResize);
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendMessage(); }
+  });
+  modelSel.addEventListener("change", () => {
+    const parts = modelSel.value.split("::");
+    if (parts.length === 2) selectModel(parts[0], parts[1]);
+  });
+  effortSel.addEventListener("change", () => {
+    const parts = modelSel.value.split("::");
+    if (parts.length === 2) selectModel(parts[0], parts[1], effortSel.value || undefined);
+  });
+  newBtn.addEventListener("click", async () => {
+    if (!confirm("开启新对话？当前对话会保留在 harness 里，但本页不再显示。")) return;
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "aiChat", op: "newSession" });
+      if (res && res.ok) {
+        chat.sessionId = res.sessionId;
+        chat.sinceSeq = -1;
+        chat.lastSentText = null;
+        chat.messages = [];
+        chat.models = res.models;
+        chat.current = res.current;
+        chat.stats = { turns: 0, steps: 0, inTok: 0, outTok: 0 };
+        renderModelSelects();
+        renderStatus();
+        list.innerHTML = `<p class="muted small">新对话已开启。</p>`;
+        loadSidebar();
+      } else {
+        showError("新对话失败：" + ((res && res.error) || "未知错误"));
+      }
+    } catch (e) {
+      showError("新对话失败：" + ((e && e.message) || String(e)));
     }
   });
 
-  clear.addEventListener("click", () => {
-    input.value = "";
-    output.innerHTML = `<p class="muted small">粘贴一段视频文本，让 DeepSeek 分析这个视频有什么价值。</p>`;
-    if (status) status.textContent = "";
-  });
+  (async function init() {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "aiChat", op: "sync", sinceSeq: -1 });
+      list.innerHTML = "";
+      if (res && res.ok) {
+        chat.sessionId = res.sessionId;
+        chat.models = res.models;
+        chat.current = res.current;
+        renderModelSelects();
+        applyEvents(res.events || []);
+        if (res.maxSeq != null) chat.sinceSeq = res.maxSeq;
+        if (chat.messages.length === 0) {
+          list.innerHTML = `<p class="muted small">已连接 DeepSeek。随便聊，或粘贴视频字幕让它分析。</p>`;
+        }
+        loadSidebar();
+        connectMux();
+      } else {
+        showError("无法连接 DeepSeek Harness：" + ((res && res.error) || "未知错误") + "。请确认本机 harness 正在运行（dsh web）。");
+      }
+    } catch (e) {
+      list.innerHTML = "";
+      showError("无法连接 DeepSeek Harness：" + ((e && e.message) || String(e)) + "。请确认本机 harness 正在运行（dsh web）。");
+    }
+  })();
 }
+
+// ---------- boot ----------
 
 async function boot() {
   initTheme();
@@ -2745,7 +3367,7 @@ async function boot() {
   loadTraffic();
   setInterval(loadTraffic, 300000);
   initSrtTool();
-  initAiAnalyze();
+  initAiChat();
   loadFolderOrganizer();
   loadBiliWorkbench();
   loadSubfolderManager();
