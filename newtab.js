@@ -1583,6 +1583,31 @@ async function loadTraffic() {
 }
 
 // ---------- subtitle workbench (B站收藏夹 + srt 转纯文本) ----------
+async function getFlatGroups() {
+  const stored = await storageGet(["foTree", "foGroups"]);
+  let result = {};
+  if (stored.foTree && stored.foTree.children) {
+    const walk = (node, path) => {
+      (node.children || []).forEach((c) => {
+        if (c.type === "folder") walk(c, path ? path + " / " + c.name : c.name);
+        else {
+          const p = path || "未分组";
+          (result[p] = result[p] || []).push(Number(c.id));
+        }
+      });
+    };
+    walk(stored.foTree, "");
+  } else {
+    result = stored.foGroups || {};
+  }
+  // 统一 id 为数字，避免树节点里字符串 id 与 B站 folders 数字 id 不匹配
+  const norm = {};
+  Object.entries(result).forEach(([g, fids]) => {
+    norm[g] = (fids || []).map((fid) => Number(fid)).filter((n) => !Number.isNaN(n));
+  });
+  return norm;
+}
+
 async function loadBiliWorkbench() {
   const body = $("wb-bili");
   if (!body) return;
@@ -1594,8 +1619,11 @@ async function loadBiliWorkbench() {
     const fj = await biliJson(`https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${mid}`);
     const folders = fj?.data?.list || [];
     if (!folders.length) { body.innerHTML = `<p class="muted small">没有找到收藏夹。</p>`; return; }
+    const groups = await getFlatGroups();
+    const grouped = new Set(Object.values(groups).flat());
     body.innerHTML = "";
-    folders.forEach((f) => {
+
+    const makeFolder = (f) => {
       const wrap = el("div", "folder");
       const head = el("button", "folder-head", `<span class="caret">▶</span><span>${esc(f.title)}</span><span class="count">${f.media_count}</span>`);
       const items = el("div", "folder-items");
@@ -1623,8 +1651,23 @@ async function loadBiliWorkbench() {
           } catch { items.innerHTML = `<p class="muted small">加载失败</p>`; }
         }
       });
-      wrap.appendChild(head); wrap.appendChild(items); body.appendChild(wrap);
+      wrap.appendChild(head); wrap.appendChild(items);
+      return wrap;
+    };
+
+    Object.entries(groups).forEach(([gname, fids]) => {
+      if (!(fids || []).length) return;
+      const grp = el("div", "folder-group");
+      grp.innerHTML = `<div class="folder-group-head">📁 ${esc(gname)}</div>`;
+      (fids || []).forEach((fid) => {
+        const f = folders.find((x) => x.id === fid);
+        if (f) grp.appendChild(makeFolder(f));
+      });
+      body.appendChild(grp);
     });
+
+    const ungrouped = folders.filter((f) => !grouped.has(f.id));
+    ungrouped.forEach((f) => body.appendChild(makeFolder(f)));
   } catch { body.innerHTML = `<p class="muted small">加载失败</p>`; }
 }
 
@@ -1983,6 +2026,430 @@ function manageFoAliases() {
   chrome.storage.local.set({ foAliases: next }, () => loadFolderOrganizer());
 }
 
+// ---------- B站收藏夹资源管理器 ----------
+function initFmTabs() {
+  document.querySelectorAll(".fm-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".fm-tab").forEach((t) => t.classList.remove("on"));
+      tab.classList.add("on");
+      document.querySelectorAll(".fm-pane").forEach((p) => (p.hidden = true));
+      const pane = $("pane-" + tab.dataset.tab);
+      if (pane) pane.hidden = false;
+    });
+  });
+}
+
+const fmState = { folders: [], groups: {}, currentFid: null };
+
+async function loadFileManager() {
+  const sidebar = $("fm-sidebar");
+  if (!sidebar) return;
+  sidebar.innerHTML = '<p class="muted small">加载中…</p>';
+  try {
+    const nav = await biliJson("https://api.bilibili.com/x/web-interface/nav");
+    if (!nav?.data?.isLogin) { sidebar.innerHTML = '<p class="notice">未登录 B 站，请先登录 <a href="https://www.bilibili.com" target="_blank" rel="noreferrer">bilibili.com</a>。</p>'; return; }
+    foState.mid = nav.data.mid;
+    const fj = await biliJson(`https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${foState.mid}`);
+    fmState.folders = fj?.data?.list || [];
+    const stored = await storageGet(["foGroups", "foBayes"]);
+    fmState.groups = stored.foGroups || {};
+    foModel.classes = stored.foBayes || {};
+    renderFmSidebar();
+    if (!fmState.currentFid || !fmState.folders.some((f) => f.id === fmState.currentFid)) {
+      const def = fmState.folders.find((f) => /默认/.test(f.title)) || fmState.folders[0];
+      if (def) openFmFolder(def.id);
+    }
+  } catch (e) {
+    sidebar.innerHTML = '<p class="muted small">加载失败：' + esc(e.message) + '</p>';
+  }
+}
+
+function renderFmSidebar() {
+  const sidebar = $("fm-sidebar");
+  sidebar.innerHTML = "";
+  const grouped = new Set(Object.values(fmState.groups).flat());
+  const makeFolderItem = (f) => {
+    const item = el("div", "fm-folder-item" + (fmState.currentFid === f.id ? " on" : ""));
+    item.innerHTML = `<span class="fm-folder-name">${esc(f.title)}</span><span class="fm-count">${f.media_count || ""}</span>`;
+    item.addEventListener("click", () => openFmFolder(f.id));
+    return item;
+  };
+
+  Object.entries(fmState.groups).forEach(([gname, fids]) => {
+    if (!(fids || []).length) return;
+    const grp = el("div", "fm-group");
+    const head = el("div", "fm-group-head");
+    head.innerHTML = `<span class="caret">▸</span><span>📁 ${esc(gname)}</span>`;
+    const body = el("div", "fm-group-body");
+    body.style.display = "none";
+    head.addEventListener("click", () => {
+      const open = body.style.display !== "none";
+      body.style.display = open ? "none" : "block";
+      head.querySelector(".caret").textContent = open ? "▸" : "▾";
+    });
+    (fids || []).forEach((fid) => {
+      const f = fmState.folders.find((x) => x.id === fid);
+      if (f) body.appendChild(makeFolderItem(f));
+    });
+    grp.appendChild(head);
+    grp.appendChild(body);
+    sidebar.appendChild(grp);
+  });
+
+  const ungrouped = fmState.folders.filter((f) => !grouped.has(f.id));
+  ungrouped.forEach((f) => sidebar.appendChild(makeFolderItem(f)));
+}
+
+async function openFmFolder(fid) {
+  fmState.currentFid = fid;
+  const folder = fmState.folders.find((f) => f.id === fid);
+  const status = $("fm-status");
+  if (status) status.textContent = folder?.title || "";
+  renderFmSidebar();
+  const vids = $("fm-videos");
+  if (!vids) return;
+  vids.innerHTML = '<p class="muted small">加载中…</p>';
+  try {
+    const rj = await biliJson(`https://api.bilibili.com/x/v3/fav/resource/list?media_id=${fid}&pn=1&ps=30&platform=web`);
+    const medias = rj?.data?.medias || [];
+    renderFmVideos(folder, medias);
+  } catch (e) {
+    vids.innerHTML = '<p class="muted small">加载失败：' + esc(e.message) + '</p>';
+  }
+}
+
+function renderFmVideos(folder, medias) {
+  const vids = $("fm-videos");
+  vids.innerHTML = "";
+  const targetFolders = fmState.folders.filter((f) => f.id !== folder.id);
+  if (!medias.length) { vids.appendChild(el("p", "muted small", "这个收藏夹是空的。")); return; }
+
+  const toolbar = el("div", "fo-toolbar");
+  const modeBtn = el("button", "fo-btn");
+  modeBtn.textContent = foState.auto ? "🔄 手动批准" : "⚡ 自动(full access)";
+  modeBtn.addEventListener("click", async () => {
+    foState.auto = !foState.auto;
+    await chrome.storage.local.set({ foAuto: foState.auto });
+    openFmFolder(folder.id);
+  });
+  toolbar.appendChild(modeBtn);
+  toolbar.appendChild(el("span", "muted small", `共 ${medias.length} 个视频`));
+  vids.appendChild(toolbar);
+
+  medias.forEach((m) => {
+    const row = el("div", "fo-item");
+    const aid = m.id || m.aid;
+    const bvid = m.bvid || "";
+    const cover = (m.cover || "").replace(/^http:/, "https:");
+    const videoUrl = bvid ? `https://www.bilibili.com/video/${bvid}` : "#";
+    row.innerHTML =
+      `<a class="fo-cover-link" href="${videoUrl}" target="_blank" rel="noreferrer"><img class="fo-cover" loading="lazy" referrerpolicy="no-referrer" src="${esc(cover)}" alt=""></a>` +
+      `<div class="fo-item-main"><div class="fo-item-title"><a class="fo-title-link" href="${videoUrl}" target="_blank" rel="noreferrer">${esc(m.title)}</a></div></div>`;
+
+    const subBtn = el("button", "fo-btn", "字幕");
+    subBtn.title = "提取这个视频的字幕";
+    subBtn.addEventListener("click", async () => {
+      subBtn.disabled = true; subBtn.textContent = "提取中…";
+      try {
+        const r = await fetchBiliSubtitle(bvid);
+        const out = $("srt-output");
+        const st = $("srt-status");
+        if (r.ok) {
+          if (out) out.value = r.headText + r.bodyText;
+          if (st) { st.textContent = `✅ 已提取（${r.title}）`; st.className = "srt-status ok"; }
+        } else {
+          if (st) { st.textContent = "⚠️ " + r.reason; st.className = "srt-status err"; }
+        }
+      } catch (e) {
+        const st = $("srt-status");
+        if (st) { st.textContent = "❌ " + e.message; st.className = "srt-status err"; }
+      }
+      subBtn.disabled = false; subBtn.textContent = "字幕";
+    });
+    row.appendChild(subBtn);
+
+    const sel = el("select", "fo-sel");
+    sel.innerHTML = `<option value="">移动…</option>` + targetFolders.map((f) => `<option value="${f.id}">${esc(f.title)}</option>`).join("");
+    const moveBtn = el("button", "fo-move");
+    moveBtn.textContent = "移动";
+    moveBtn.addEventListener("click", async () => {
+      const fid = sel.value;
+      if (!fid) return;
+      moveBtn.disabled = true; moveBtn.textContent = "…";
+      const res = await moveBiliVideo(folder.id, fid, aid, foState.mid);
+      if (res.ok) { row.remove(); }
+      else { moveBtn.disabled = false; moveBtn.textContent = "重试"; alert("移动失败：" + res.reason); }
+    });
+    row.appendChild(sel);
+    row.appendChild(moveBtn);
+
+    const delBtn = el("button", "fo-del");
+    delBtn.textContent = "✕";
+    delBtn.title = "取消收藏";
+    delBtn.addEventListener("click", async () => {
+      if (!confirm(`取消收藏「${m.title}」？`)) return;
+      delBtn.disabled = true;
+      const res = await deleteBiliVideo(folder.id, aid);
+      if (res.ok) row.remove();
+      else { delBtn.disabled = false; alert("删除失败：" + res.reason); }
+    });
+    row.appendChild(delBtn);
+
+    vids.appendChild(row);
+  });
+}
+
+// ---------- 收藏夹树（文件夹可嵌套，收藏夹为叶子） ----------
+let favTree = { id: "root", children: [] };
+let favFolders = [];
+
+function newFolderNode(name) {
+  return { id: "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), type: "folder", name, children: [] };
+}
+function findNode(node, id) {
+  if (node.id === id) return node;
+  for (const c of node.children || []) { const r = findNode(c, id); if (r) return r; }
+  return null;
+}
+function findParent(node, id) {
+  for (const c of node.children || []) { if (c.id === id) return node; const r = findParent(c, id); if (r) return r; }
+  return null;
+}
+function removeNodeById(node, id) {
+  if (!node.children) return false;
+  const i = node.children.findIndex((c) => c.id === id);
+  if (i >= 0) { node.children.splice(i, 1); return true; }
+  for (const c of node.children) if (removeNodeById(c, id)) return true;
+  return false;
+}
+function isDescendant(node, ancestorId) {
+  if (node.id === ancestorId) return true;
+  for (const c of node.children || []) if (isDescendant(c, ancestorId)) return true;
+  return false;
+}
+function saveTree() { chrome.storage.local.set({ foTree: favTree }, () => loadSubfolderManager()); }
+
+async function openFavFolder(fid, title) {
+  const content = $("sf-content");
+  if (!content) return;
+  document.querySelectorAll(".sf-node.sel").forEach((x) => x.classList.remove("sel"));
+  document.querySelectorAll(".sf-node[data-id]").forEach((x) => { if (x.dataset.id === String(fid)) x.classList.add("sel"); });
+  content.innerHTML = '<p class="muted small">加载中…</p>';
+  try {
+    const rj = await biliJson(`https://api.bilibili.com/x/v3/fav/resource/list?media_id=${fid}&pn=1&ps=30&platform=web`);
+    const medias = rj?.data?.medias || [];
+    content.innerHTML = "";
+    content.appendChild(el("p", "sf-content-title", `「${esc(title)}」· ${medias.length} 个视频`));
+    if (!medias.length) { content.appendChild(el("p", "muted small", "空收藏夹")); return; }
+    const grid = el("div", "sf-video-grid");
+    medias.forEach((m) => {
+      const card = el("a", "sf-video");
+      card.href = m.bvid ? `https://www.bilibili.com/video/${m.bvid}` : "#";
+      card.target = "_blank";
+      card.rel = "noreferrer";
+      const cover = (m.cover || "").replace(/^http:/, "https:");
+      const play = m.cnt_info?.play ? (m.cnt_info.play >= 10000 ? (m.cnt_info.play / 10000).toFixed(1) + "万" : m.cnt_info.play) : "";
+      card.innerHTML =
+        `<img class="sf-video-cover" loading="lazy" referrerpolicy="no-referrer" src="${esc(cover)}" alt="">` +
+        `<div class="sf-video-title">${esc(m.title)}</div>` +
+        `<div class="sf-video-meta">${m.upper?.name ? esc(m.upper.name) : ""}${play ? " · " + play + "播放" : ""}</div>`;
+      grid.appendChild(card);
+    });
+    content.appendChild(grid);
+  } catch (e) {
+    content.innerHTML = '<p class="muted small">加载失败：' + esc(e.message) + '</p>';
+  }
+}
+
+async function loadSubfolderManager() {
+  const body = $("subfolder-body");
+  if (!body) return;
+  body.innerHTML = '<p class="muted small">加载中…</p>';
+  try {
+    const nav = await biliJson("https://api.bilibili.com/x/web-interface/nav");
+    if (!nav?.data?.isLogin) { body.innerHTML = '<p class="notice">未登录 B 站。</p>'; return; }
+    const mid = nav.data.mid;
+    const fj = await biliJson(`https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${mid}`);
+    favFolders = fj?.data?.list || [];
+    const stored = await storageGet(["foTree", "foGroups"]);
+    if (stored.foTree && stored.foTree.children) {
+      favTree = stored.foTree;
+    } else {
+      // 迁移旧 foGroups
+      favTree = { id: "root", children: [] };
+      const groups = stored.foGroups || {};
+      Object.entries(groups).forEach(([gname, fids]) => {
+        const fn = newFolderNode(gname);
+        fn.children = (fids || []).map((fid) => {
+          const f = favFolders.find((x) => String(x.id) === String(fid));
+          return { id: String(fid), type: "fav", name: f ? f.title : String(fid), children: [] };
+        });
+        favTree.children.push(fn);
+      });
+      chrome.storage.local.set({ foTree: favTree });
+    }
+    renderTree();
+  } catch (e) {
+    body.innerHTML = '<p class="muted small">加载失败：' + esc(e.message) + '</p>';
+  }
+}
+
+function renderTree() {
+  const body = $("subfolder-body");
+  body.innerHTML = "";
+
+  const toolbar = el("div", "fo-toolbar");
+  const input = el("input", "sf-input");
+  input.placeholder = "新文件夹名";
+  const addBtn = el("button", "fo-btn", "＋ 根目录建文件夹");
+  addBtn.addEventListener("click", () => {
+    const name = input.value.trim();
+    if (!name) return;
+    favTree.children.push(newFolderNode(name));
+    saveTree();
+  });
+  toolbar.appendChild(input);
+  toolbar.appendChild(addBtn);
+  body.appendChild(toolbar);
+  body.appendChild(el("p", "muted small", "拖动节点调整顺序 / 移入文件夹。点文件夹名可折叠。"));
+
+  const renderChildren = (children, container, depth) => {
+    children.forEach((node) => {
+      if (node.type === "folder") {
+        const folder = el("div", "sf-folder-node");
+        const head = el("div", "sf-node");
+        head.dataset.id = node.id;
+        head.dataset.type = "folder";
+        head.style.paddingLeft = (depth * 16 + 8) + "px";
+        head.innerHTML = `<span class="caret">▾</span><span class="sf-node-icon">📁</span><span class="sf-node-name">${esc(node.name)}</span>`;
+        const addSub = el("button", "sf-node-btn", "＋");
+        addSub.title = "建子文件夹";
+        addSub.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const name = prompt("子文件夹名");
+          if (!name) return;
+          (node.children = node.children || []).push(newFolderNode(name.trim()));
+          saveTree();
+        });
+        const del = el("button", "sf-node-btn", "删");
+        del.title = "删除文件夹";
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!confirm(`删除文件夹「${node.name}」？里面的收藏夹会回到根目录。`)) return;
+          removeNodeById(favTree, node.id);
+          saveTree();
+        });
+        head.appendChild(addSub);
+        head.appendChild(del);
+        const kids = el("div", "sf-kids");
+        renderChildren(node.children || [], kids, depth + 1);
+        const isOpen = node.open !== false;
+        kids.style.display = isOpen ? "block" : "none";
+        head.querySelector(".caret").textContent = isOpen ? "▾" : "▸";
+        head.addEventListener("click", (e) => {
+          if (e.target.closest("button")) return;
+          node.open = !(node.open !== false);
+          kids.style.display = node.open !== false ? "block" : "none";
+          head.querySelector(".caret").textContent = node.open !== false ? "▾" : "▸";
+          chrome.storage.local.set({ foTree: favTree });
+        });
+        folder.appendChild(head);
+        folder.appendChild(kids);
+        container.appendChild(folder);
+      } else {
+        const item = el("div", "sf-node sf-fav-node");
+        item.dataset.id = node.id;
+        item.dataset.type = "fav";
+        item.style.paddingLeft = (depth * 16 + 8) + "px";
+        const ff = favFolders.find((x) => String(x.id) === String(node.id));
+        const cover = ff?.cover ? String(ff.cover).replace(/^http:/, "https:") : "";
+        item.innerHTML = cover
+          ? `<img class="sf-node-cover" loading="lazy" referrerpolicy="no-referrer" src="${esc(cover)}" alt=""><span class="sf-node-name">${esc(node.name)}</span>`
+          : `<span class="sf-node-icon">🎬</span><span class="sf-node-name">${esc(node.name)}</span>`;
+        item.addEventListener("click", (e) => {
+          if (e.target.closest("button")) return;
+          openFavFolder(node.id, node.name);
+        });
+        container.appendChild(item);
+      }
+    });
+  };
+
+  // 未分组收藏夹补到根目录
+  const groupedIds = new Set();
+  (function collect(n) { (n.children || []).forEach((c) => { if (c.type === "fav") groupedIds.add(c.id); else collect(c); }); })(favTree);
+  favFolders.forEach((f) => {
+    if (!groupedIds.has(String(f.id))) favTree.children.push({ id: String(f.id), type: "fav", name: f.title, children: [] });
+  });
+
+  renderChildren(favTree.children, body, 0);
+}
+
+let treeDrag = null;
+let treeGhost = null;
+function initTreeDrag() {
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    const node = e.target.closest(".sf-node");
+    if (!node || e.target.closest("button")) return;
+    if (treeGhost) { treeGhost.remove(); treeGhost = null; }
+    treeDrag = { id: node.dataset.id, type: node.dataset.type, el: node };
+    treeGhost = node.cloneNode(true);
+    treeGhost.classList.add("sf-ghost");
+    treeGhost.style.width = node.offsetWidth + "px";
+    treeGhost.style.left = (e.clientX - 8) + "px";
+    treeGhost.style.top = (e.clientY - 8) + "px";
+    document.body.appendChild(treeGhost);
+    node.classList.add("dragging");
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!treeDrag || !treeGhost) return;
+    treeGhost.style.left = (e.clientX - 8) + "px";
+    treeGhost.style.top = (e.clientY - 8) + "px";
+    document.querySelectorAll(".sf-node.insert-before, .sf-node.insert-after, .sf-node.insert-into").forEach((x) => x.classList.remove("insert-before", "insert-after", "insert-into"));
+    const t = document.elementFromPoint(e.clientX, e.clientY)?.closest(".sf-node");
+    if (t && t !== treeDrag.el) {
+      const rect = t.getBoundingClientRect();
+      const ratio = (e.clientY - rect.top) / rect.height;
+      if (t.dataset.type === "folder" && ratio > 0.3 && ratio < 0.7) t.classList.add("insert-into");
+      else t.classList.add(ratio < 0.5 ? "insert-before" : "insert-after");
+    }
+  });
+
+  document.addEventListener("mouseup", (e) => {
+    if (!treeDrag) return;
+    if (treeGhost) { treeGhost.remove(); treeGhost = null; }
+    document.querySelectorAll(".sf-node.insert-before, .sf-node.insert-after, .sf-node.insert-into").forEach((x) => x.classList.remove("insert-before", "insert-after", "insert-into"));
+    treeDrag.el.classList.remove("dragging");
+    const t = document.elementFromPoint(e.clientX, e.clientY)?.closest(".sf-node");
+    if (t && t !== treeDrag.el) {
+      const srcId = treeDrag.id, srcType = treeDrag.type;
+      const tgtId = t.dataset.id, tgtType = t.dataset.type;
+      const rect = t.getBoundingClientRect();
+      const ratio = (e.clientY - rect.top) / rect.height;
+      if (srcType === "folder" && findNode(favTree, srcId) && isDescendant(findNode(favTree, srcId), tgtId)) { treeDrag = null; return; }
+      const srcNode = findNode(favTree, srcId);
+      if (!srcNode) { treeDrag = null; return; }
+      const srcCopy = JSON.parse(JSON.stringify(srcNode));
+      removeNodeById(favTree, srcId);
+      if (tgtType === "folder" && ratio > 0.3 && ratio < 0.7) {
+        const tf = findNode(favTree, tgtId);
+        if (tf) (tf.children = tf.children || []).push(srcCopy);
+      } else {
+        const tp = findParent(favTree, tgtId) || favTree;
+        const arr = tp.children || (tp.children = []);
+        let i = arr.findIndex((c) => c.id === tgtId);
+        if (i < 0) i = arr.length;
+        if (ratio >= 0.5) i++;
+        arr.splice(i, 0, srcCopy);
+      }
+      saveTree();
+    }
+    treeDrag = null;
+  });
+}
 async function loadFolderOrganizer() {
   const body = $("fo-body");
   if (!body) return;
@@ -2001,6 +2468,7 @@ async function loadFolderOrganizer() {
     foState.aliases = stored.foAliases || {};
     foState.auto = !!stored.foAuto;
     foModel.classes = stored.foBayes || {};
+    foState.groups = await getFlatGroups();
     const PS = 10;
     const rj = await biliJson(`https://api.bilibili.com/x/v3/fav/resource/list?media_id=${srcFolder.id}&pn=${foState.page}&ps=${PS}&platform=web`);
     const medias = rj?.data?.medias || [];
@@ -2024,13 +2492,31 @@ async function loadFolderOrganizer() {
       const bayesRes = match ? null : bayesPredict(feats);
       results.push({ media: m, tags, match, feats, bayesRes });
     }
-    renderFolderOrganizer(results, srcFolder, targetFolders, folders, total, PS);
+    renderFolderOrganizer(results, srcFolder, targetFolders, folders, total, PS, foState.groups);
   } catch (e) {
     body.innerHTML = '<p class="muted small">加载失败：' + esc(e.message) + '</p>';
   }
 }
 
-function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, total, ps) {
+function groupedFolderOptions(folders, groups, selectedId) {
+  const grouped = new Set(Object.values(groups).flat());
+  const opts = [];
+  const selAttr = (fid) => (fid === selectedId ? " selected" : "");
+  Object.entries(groups).forEach(([gname, fids]) => {
+    if (!(fids || []).length) return;
+    const groupOpts = (fids || []).map((fid) => {
+      const f = folders.find((x) => x.id === fid);
+      return f ? `<option value="${f.id}"${selAttr(f.id)}>${esc(f.title)}</option>` : "";
+    }).join("");
+    if (groupOpts) opts.push(`<optgroup label="${esc(gname)}">${groupOpts}</optgroup>`);
+  });
+  const ungrouped = folders.filter((f) => !grouped.has(f.id));
+  const ungroupOpts = ungrouped.map((f) => `<option value="${f.id}"${selAttr(f.id)}>${esc(f.title)}</option>`).join("");
+  if (ungroupOpts) opts.push(`<optgroup label="未分组">${ungroupOpts}</optgroup>`);
+  return opts.join("");
+}
+
+function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, total, ps, groups) {
   const body = $("fo-body");
   body.innerHTML = "";
   const matched = results.filter((r) => r.match);
@@ -2038,7 +2524,7 @@ function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, to
 
   const srcSel = el("select", "fo-src-sel");
   srcSel.title = "选择要整理的收藏夹";
-  srcSel.innerHTML = allFolders.map((f) => `<option value="${f.id}"${f.id === srcFolder.id ? " selected" : ""}>📁 ${esc(f.title)}</option>`).join("");
+  srcSel.innerHTML = groupedFolderOptions(allFolders, groups, srcFolder.id);
   srcSel.addEventListener("change", () => {
     foState.srcId = srcSel.value;
     foState.page = 1;
@@ -2085,7 +2571,7 @@ function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, to
 
     const sel = el("select", "fo-sel");
     const defId = r.match?.id || r.bayesRes?.id;
-    sel.innerHTML = `<option value="">— 选择收藏夹 —</option>` + targetFolders.map((f) => `<option value="${f.id}"${defId === f.id ? " selected" : ""}>${esc(f.title)}</option>`).join("");
+    sel.innerHTML = `<option value="">— 选择收藏夹 —</option>` + groupedFolderOptions(targetFolders, groups, defId);
 
     const delBtn = el("button", "fo-del");
     delBtn.textContent = "✕";
@@ -2138,7 +2624,7 @@ function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, to
   }
 }
 
-const foState = { aliases: {}, auto: false, mid: "", srcId: null, page: 1, pendingScroll: false };
+const foState = { aliases: {}, auto: false, mid: "", srcId: null, page: 1, pendingScroll: false, groups: {} };
 
 // ---------- boot ----------
 async function boot() {
@@ -2158,12 +2644,16 @@ async function boot() {
   loadVps(cfg.vpsUrl);
   loadTraffic();
   setInterval(loadTraffic, 300000);
-  loadBiliWorkbench();
   initSrtTool();
   loadFolderOrganizer();
+  loadBiliWorkbench();
+  loadSubfolderManager();
+  initFmTabs();
+  initTreeDrag();
   if (cfg.vpsUrl) setInterval(() => loadVps(cfg.vpsUrl), 15000);
   $("todo-refresh").addEventListener("click", () => {
     if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);
   });
 }
 boot();
+

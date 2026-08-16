@@ -153,57 +153,56 @@
     </dialog>
 
     <main id="daily-section" class="wrap">
-      <!-- VPS probe -->
+      <!-- B站收藏夹（Tab 切换） -->
       <section class="card wide">
         <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#22d3ee,#3b82f6)"></span>
-          <h2>VPS 探针</h2>
+          <span class="bar" style="background: linear-gradient(180deg,#818cf8,#f472b6)"></span>
+          <h2>B站收藏夹</h2>
           <span class="grow"></span>
-          <span id="vps-host" class="dim small"></span>
-        </header>
-        <div id="vps-body"><p class="muted small">连接中…</p></div>
-      </section>
-
-      <!-- 字幕提取工作台 -->
-      <section class="card wide">
-        <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#a78bfa,#f472b6)"></span>
-          <h2>字幕提取</h2>
-          <span class="grow"></span>
-          <span class="muted small">左边找视频 · 右边拖 srt 转纯文本</span>
-        </header>
-        <div class="subtitle-workbench">
-          <div class="sw-left">
-            <p class="sw-title">B站收藏夹</p>
-            <div id="wb-bili" class="wb-bili"><p class="muted small">加载中…</p></div>
+          <div class="fm-tabs">
+            <button class="fm-tab on" data-tab="organizer" type="button">📁 整理</button>
+            <button class="fm-tab" data-tab="subtitle" type="button">📝 字幕</button>
+            <button class="fm-tab" data-tab="groups" type="button">🗂 分组</button>
           </div>
-          <div class="sw-right">
-            <p class="sw-title">字幕转文本</p>
-            <div id="srt-drop" class="srt-drop" title="拖 B站视频卡片自动抓字幕；或拖字幕文件转文本">
-              拖入 B站视频（自动抓字幕）或字幕文件<br />
-              <span class="muted small">视频卡片 · .srt / .vtt / .json / .ass 文件都支持</span>
+        </header>
+
+        <div class="fm-pane" id="pane-organizer">
+          <div id="fo-body"><p class="muted small">加载中…</p></div>
+        </div>
+
+        <div class="fm-pane" id="pane-subtitle" hidden>
+          <div class="subtitle-workbench">
+            <div class="sw-left">
+              <p class="sw-title">B站收藏夹</p>
+              <div id="wb-bili" class="wb-bili"><p class="muted small">加载中…</p></div>
             </div>
-            <p id="srt-status" class="srt-status"></p>
-            <textarea id="srt-output" class="srt-output" rows="12" placeholder="转换后的纯文本会显示在这里，直接复制即可…"></textarea>
-            <div class="srt-actions">
-              <button id="srt-copy" class="srt-copy" type="button">📋 复制正文</button>
-              <button id="srt-copy-all" class="srt-copy" type="button">📋 复制全部</button>
-              <button id="srt-clear" class="srt-clear" type="button">清空</button>
+            <div class="sw-right">
+              <p class="sw-title">字幕转文本</p>
+              <div id="srt-drop" class="srt-drop" title="拖 B站视频卡片自动抓字幕；或拖字幕文件转文本">
+                拖入 B站视频（自动抓字幕）或字幕文件<br />
+                <span class="muted small">视频卡片 · .srt / .vtt / .json / .ass 文件都支持</span>
+              </div>
+              <p id="srt-status" class="srt-status"></p>
+              <textarea id="srt-output" class="srt-output" rows="12" placeholder="转换后的纯文本会显示在这里，直接复制即可…"></textarea>
+              <div class="srt-actions">
+                <button id="srt-copy" class="srt-copy" type="button">📋 复制正文</button>
+                <button id="srt-copy-all" class="srt-copy" type="button">📋 复制全部</button>
+                <button id="srt-clear" class="srt-clear" type="button">清空</button>
+              </div>
             </div>
           </div>
         </div>
-      </section>
 
-      <!-- 文件夹整理 -->
-      <section class="card wide">
-        <header class="card-head">
-          <span class="bar" style="background: linear-gradient(180deg,#f59e0b,#f472b6)"></span>
-          <h2>文件夹整理</h2>
-          <span class="grow"></span>
-          <span id="fo-mode-label" class="muted small">手动批准</span>
-          <button id="fo-refresh" class="icon-btn" title="重新分析">↻</button>
-        </header>
-        <div id="fo-body"><p class="muted small">加载中…</p></div>
+        <div class="fm-pane" id="pane-groups" hidden>
+          <div class="sf-layout">
+            <div class="sf-sidebar">
+              <div id="subfolder-body"><p class="muted small">加载中…</p></div>
+            </div>
+            <div class="sf-content" id="sf-content">
+              <p class="muted small">点左边收藏夹查看视频</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- AI HOT -->
@@ -248,6 +247,17 @@
           <span id="traffic-host" class="muted small">中兴 F50 Pro</span>
         </header>
         <div id="traffic-body"><p class="muted small">加载中…</p></div>
+      </section>
+
+      <!-- VPS probe -->
+      <section class="card wide">
+        <header class="card-head">
+          <span class="bar" style="background: linear-gradient(180deg,#22d3ee,#3b82f6)"></span>
+          <h2>VPS 探针</h2>
+          <span class="grow"></span>
+          <span id="vps-host" class="dim small"></span>
+        </header>
+        <div id="vps-body"><p class="muted small">连接中…</p></div>
       </section>
     </main>
     <script src="newtab.js"></script>
