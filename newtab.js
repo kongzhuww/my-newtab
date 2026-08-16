@@ -169,7 +169,7 @@ async function loadTodos(token) {
 }
 
 // ---------- GitHub star (with categories) ----------
-const gh = { repos: [], cats: [], map: {}, active: "全部", UNCAT: "未分类" };
+const gh = { repos: [], cats: [], map: {}, active: "全部", UNCAT: "未分类", expanded: false };
 function ghSave() { chrome.storage.local.set({ ghCats: gh.cats, ghMap: gh.map }); }
 async function loadGitHub(user, token) {
   const body = $("gh-body");
@@ -219,8 +219,11 @@ function renderGh() {
   // list
   const shown = gh.active === "全部" ? gh.repos : gh.active === gh.UNCAT ? gh.repos.filter((rp) => !gh.map[rp.full_name] || !gh.cats.includes(gh.map[rp.full_name])) : gh.repos.filter((rp) => gh.map[rp.full_name] === gh.active);
   if (!shown.length) { body.appendChild(el("p", "muted small", "这个分类下没有仓库。")); return; }
+  const SHOW_LIMIT = 8;
+  const collapsed = !gh.expanded && shown.length > SHOW_LIMIT;
+  const display = collapsed ? shown.slice(0, SHOW_LIMIT) : shown;
   const grid = el("div", "repos");
-  shown.forEach((rp) => {
+  display.forEach((rp) => {
     const card = el("div", "repo");
     const cur = gh.map[rp.full_name] && gh.cats.includes(gh.map[rp.full_name]) ? gh.map[rp.full_name] : "";
     card.innerHTML =
@@ -231,6 +234,12 @@ function renderGh() {
     grid.appendChild(card);
   });
   body.appendChild(grid);
+  if (shown.length > SHOW_LIMIT) {
+    const toggle = el("button", "gh-more");
+    toggle.textContent = collapsed ? `展开全部 ${shown.length} 个仓库` : "收起";
+    toggle.addEventListener("click", () => { gh.expanded = !gh.expanded; renderGh(); });
+    body.appendChild(toggle);
+  }
 }
 
 // ---------- VPS probe ----------
@@ -1531,6 +1540,280 @@ function watchHomeModuleSettings(cfg) {
   });
 }
 
+// ---------- traffic card (中兴 F50 Pro 流量卡) ----------
+const TRAFFIC_API = "http://192.168.0.1/goform/goform_get_cmd_process?cmd=flux_monthly_tx_bytes,flux_monthly_rx_bytes,flux_data_volume_limit_size,flux_data_volume_limit_unit";
+
+function setTrafficQuota() {
+  const v = prompt("输入套餐总额度（GB）：", "");
+  if (v === null) return;
+  const n = parseFloat(v);
+  if (!isFinite(n) || n <= 0) return;
+  chrome.storage.local.set({ trafficQuota: n }, () => loadTraffic());
+}
+
+async function loadTraffic() {
+  const body = $("traffic-body");
+  if (!body) return;
+  try {
+    const r = await fetch(TRAFFIC_API, { cache: "no-store" });
+    const j = await r.json();
+    const tx = Number(j.flux_monthly_tx_bytes || j.monthly_tx_bytes || 0);
+    const rx = Number(j.flux_monthly_rx_bytes || j.monthly_rx_bytes || 0);
+    const used = (tx + rx) / 1073741824; // GB
+    const stored = await storageGet(["trafficQuota"]);
+    const quota = Number(stored.trafficQuota) || 180; // 默认 180GB 套餐
+    if (quota > 0) {
+      const left = Math.max(0, quota - used);
+      const pct = Math.min(100, (used / quota) * 100);
+      body.innerHTML =
+        `<div class="traffic-bar"><div class="traffic-fill" style="width:${pct.toFixed(1)}%"></div></div>` +
+        `<p class="traffic-line">已用 <b>${used.toFixed(1)} GB</b> / ${quota} GB · 剩余 <b>${left.toFixed(1)} GB</b></p>` +
+        `<p class="muted small" id="traffic-set">点击调整套餐额度</p>`;
+    } else {
+      body.innerHTML =
+        `<div class="traffic-bar"><div class="traffic-fill" style="width:100%"></div></div>` +
+        `<p class="traffic-line">本月已用 <b>${used.toFixed(1)} GB</b></p>` +
+        `<p class="muted small" id="traffic-set">点击设置套餐额度（用于算剩余）</p>`;
+    }
+    const btn = $("traffic-set");
+    if (btn) btn.addEventListener("click", setTrafficQuota);
+  } catch {
+    body.innerHTML = '<p class="muted small">未连接流量卡（需连 192.168.0.1 网络）</p>';
+  }
+}
+
+// ---------- subtitle workbench (B站收藏夹 + srt 转纯文本) ----------
+async function loadBiliWorkbench() {
+  const body = $("wb-bili");
+  if (!body) return;
+  body.innerHTML = `<p class="muted small">加载中…</p>`;
+  try {
+    const nav = await biliJson("https://api.bilibili.com/x/web-interface/nav");
+    if (!nav?.data?.isLogin) { body.innerHTML = `<p class="notice">未登录 B 站，请先在 <a href="https://www.bilibili.com" target="_blank" rel="noreferrer">bilibili.com</a> 登录。</p>`; return; }
+    const mid = nav.data.mid;
+    const fj = await biliJson(`https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=${mid}`);
+    const folders = fj?.data?.list || [];
+    if (!folders.length) { body.innerHTML = `<p class="muted small">没有找到收藏夹。</p>`; return; }
+    body.innerHTML = "";
+    folders.forEach((f) => {
+      const wrap = el("div", "folder");
+      const head = el("button", "folder-head", `<span class="caret">▶</span><span>${esc(f.title)}</span><span class="count">${f.media_count}</span>`);
+      const items = el("div", "folder-items");
+      items.style.display = "none";
+      let loaded = false;
+      head.addEventListener("click", async () => {
+        const open = items.style.display !== "none";
+        items.style.display = open ? "none" : "grid";
+        head.classList.toggle("open", !open);
+        if (!open && !loaded) {
+          loaded = true;
+          items.innerHTML = `<p class="muted small">加载中…</p>`;
+          try {
+            const rj = await biliJson(`https://api.bilibili.com/x/v3/fav/resource/list?media_id=${f.id}&pn=1&ps=30&platform=web`);
+            const medias = rj?.data?.medias || [];
+            items.innerHTML = "";
+            if (!medias.length) items.innerHTML = `<p class="muted small">空</p>`;
+            medias.forEach((m) => {
+              const a = el("a", "media");
+              a.href = m.bvid ? `https://www.bilibili.com/video/${m.bvid}` : m.link || "#";
+              a.target = "_blank"; a.rel = "noreferrer";
+              a.innerHTML = `<img loading="lazy" decoding="async" referrerpolicy="no-referrer" src="${esc((m.cover || "").replace(/^http:/, "https:"))}" alt=""><span class="t">${esc(m.title)}</span>`;
+              items.appendChild(a);
+            });
+          } catch { items.innerHTML = `<p class="muted small">加载失败</p>`; }
+        }
+      });
+      wrap.appendChild(head); wrap.appendChild(items); body.appendChild(wrap);
+    });
+  } catch { body.innerHTML = `<p class="muted small">加载失败</p>`; }
+}
+
+function md5(inputStr) {
+  function L(x, c) { return (x << c) | (x >>> (32 - c)); }
+  const S = [7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+  const K = new Array(64).fill(0).map((_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32));
+  const bytes = new TextEncoder().encode(inputStr);
+  const bitLen = bytes.length * 8;
+  const padded = new Uint8Array((Math.floor((bytes.length + 8) / 64) + 1) * 64);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 8, bitLen >>> 0, true);
+  dv.setUint32(padded.length - 4, Math.floor(bitLen / 0x100000000), true);
+  let a = 0x67452301, b = 0xefcdab89, c = 0x98badcfe, d = 0x10325476;
+  for (let i = 0; i < padded.length; i += 64) {
+    const M = new Array(16);
+    for (let j = 0; j < 16; j++) M[j] = dv.getUint32(i + j * 4, true);
+    let A = a, B = b, C = c, D = d;
+    for (let j = 0; j < 64; j++) {
+      let F, g;
+      if (j < 16) { F = (B & C) | (~B & D); g = j; }
+      else if (j < 32) { F = (D & B) | (~D & C); g = (5 * j + 1) % 16; }
+      else if (j < 48) { F = B ^ C ^ D; g = (3 * j + 5) % 16; }
+      else { F = C ^ (B | ~D); g = (7 * j) % 16; }
+      const tmp = (F + A + K[j] + M[g]) >>> 0;
+      A = D; D = C; C = B;
+      B = (B + L(tmp, S[j])) >>> 0;
+    }
+    a = (a + A) >>> 0; b = (b + B) >>> 0; c = (c + C) >>> 0; d = (d + D) >>> 0;
+  }
+  function le(x) { let s = ""; for (let i = 0; i < 4; i++) s += ((x >>> (i * 8)) & 0xff).toString(16).padStart(2, "0"); return s; }
+  return le(a) + le(b) + le(c) + le(d);
+}
+
+// B站 wbi 签名
+const WBI_MIXIN_TAB = [46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52];
+let wbiKeysCache = null;
+async function getWbiKeys() {
+  if (wbiKeysCache) return wbiKeysCache;
+  const nav = await biliJson("https://api.bilibili.com/x/web-interface/nav");
+  const ik = nav.data.wbi_img.img_url.split("/").pop().split(".")[0];
+  const sk = nav.data.wbi_img.sub_url.split("/").pop().split(".")[0];
+  wbiKeysCache = { ik, sk };
+  return wbiKeysCache;
+}
+function encWbi(params, ik, sk) {
+  const mk = WBI_MIXIN_TAB.map((i) => (ik + sk)[i]).join("").slice(0, 32);
+  const wts = Math.round(Date.now() / 1000);
+  const p = { ...params, wts };
+  const q = Object.keys(p).sort().map((k) => encodeURIComponent(k) + "=" + encodeURIComponent(String(p[k]).replace(/[!'()*]/g, ""))).join("&");
+  return q + "&w_rid=" + md5(q + mk);
+}
+function extractBvid(text) {
+  const m = String(text || "").match(/BV[0-9A-Za-z]{10}/);
+  return m ? m[0] : "";
+}
+async function fetchBiliSubtitle(bvid) {
+  const view = await biliJson(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`);
+  if (!view?.data?.cid) return { ok: false, reason: "视频不存在，或 B站未登录" };
+  const cid = view.data.cid;
+  const title = view.data.title || bvid;
+  const { ik, sk } = await getWbiKeys();
+  const q = encWbi({ bvid, cid }, ik, sk);
+  const pj = await biliJson(`https://api.bilibili.com/x/player/wbi/v2?${q}`);
+  const subs = pj?.data?.subtitle?.subtitles || [];
+  if (!subs.length) return { ok: false, reason: "该视频没有 AI 字幕（可先到 B站视频页开启一次字幕）" };
+  const subJ = await biliJson("https:" + subs[0].subtitle_url);
+  const body = subJ?.body || [];
+  const text = body.map((b) => (b.content || "").trim()).filter(Boolean).join("\n");
+  if (!text.trim()) return { ok: false, reason: "字幕内容为空" };
+  return { ok: true, title, text, lineCount: text.split("\n").length };
+}
+
+function srtToPlainText(srt) {
+  const lines = srt.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const out = [];
+  let buf = [];
+  const flush = () => {
+    const text = buf
+      .filter((l) => !/^\d+$/.test(l) && !l.includes("-->") && !/^(WEBVTT|Kind:|Language:)/i.test(l))
+      .join("\n").trim();
+    if (text) out.push(text);
+    buf = [];
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === "") flush();
+    else buf.push(line);
+  }
+  flush();
+  return out.join("\n");
+}
+
+function extractSubtitles(text, filename) {
+  const ext = (filename || "").split(".").pop().toLowerCase();
+  // 1) JSON（B站字幕：{"body":[{"from":..,"content":"..."}]}）
+  if (ext === "json" || /^\s*[\[{]/.test(text)) {
+    try {
+      const j = JSON.parse(text);
+      const body = j?.body || j?.data?.body || (Array.isArray(j) ? j : null);
+      if (Array.isArray(body) && body.length) {
+        const lines = body.map((b) => (b && typeof b === "object" ? b.content : String(b))).filter((s) => s && String(s).trim());
+        if (lines.length) return lines.join("\n");
+      }
+    } catch {}
+  }
+  // 2) ASS（[Events] 段的 Dialogue: 行）
+  if (text.includes("[Events]")) {
+    const dialogues = text.split(/\r?\n/).filter((l) => /^Dialogue:/i.test(l));
+    if (dialogues.length) {
+      const lines = dialogues.map((l) => {
+        const content = l.split(",").slice(9).join(",").replace(/\{[^}]*\}/g, "").replace(/\\N/g, "\n").trim();
+        return content;
+      }).filter(Boolean);
+      if (lines.length) return lines.join("\n");
+    }
+  }
+  // 3) srt / vtt
+  return srtToPlainText(text);
+}
+
+function initSrtTool() {
+  const drop = $("srt-drop");
+  const output = $("srt-output");
+  const status = $("srt-status");
+  if (!drop || !output) return;
+  const setStatus = (msg, cls) => {
+    if (!status) return;
+    status.textContent = msg || "";
+    status.className = "srt-status" + (cls ? " " + cls : "");
+  };
+  const readFile = async (f) => {
+    output.value = "";
+    setStatus("处理中…", "busy");
+    try {
+      const text = await f.text();
+      const result = extractSubtitles(text, f.name);
+      if (result.trim()) {
+        output.value = result;
+        const lineCount = result.split("\n").filter(Boolean).length;
+        setStatus(`✅ 已提取 ${lineCount} 行文本（${f.name}）`, "ok");
+      } else {
+        setStatus(`⚠️ 未识别到字幕内容：${f.name} 可能不是字幕文件，或格式不支持`, "err");
+      }
+    } catch (e) {
+      setStatus(`❌ 读取文件失败：${e.message}`, "err");
+    }
+  };
+  drop.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".srt,.vtt,.txt,.json,.ass";
+    input.addEventListener("change", () => { if (input.files?.[0]) readFile(input.files[0]); });
+    input.click();
+  });
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("dragover"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+  drop.addEventListener("drop", async (e) => {
+    e.preventDefault(); drop.classList.remove("dragover");
+    const file = e.dataTransfer.files?.[0];
+    if (file) { readFile(file); return; }
+    const uri = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain") || "";
+    const bvid = extractBvid(uri);
+    if (bvid) {
+      output.value = "";
+      setStatus("正在抓取 B站字幕…", "busy");
+      try {
+        const r = await fetchBiliSubtitle(bvid);
+        if (r.ok) { output.value = r.text; setStatus(`✅ 已提取 ${r.lineCount} 行字幕（${r.title}）`, "ok"); }
+        else setStatus("⚠️ " + r.reason, "err");
+      } catch (err) { setStatus("❌ 抓取失败：" + err.message, "err"); }
+    } else {
+      setStatus("⚠️ 没识别到 B站视频链接，请从左边拖视频卡片过来", "err");
+    }
+  });
+  $("srt-copy").addEventListener("click", async () => {
+    if (!output.value) return;
+    try {
+      await navigator.clipboard.writeText(output.value);
+      const btn = $("srt-copy"); const old = btn.textContent;
+      btn.textContent = "✅ 已复制";
+      setTimeout(() => (btn.textContent = old), 1500);
+    } catch { setStatus("❌ 复制失败", "err"); }
+  });
+  $("srt-clear").addEventListener("click", () => { output.value = ""; setStatus("", ""); });
+}
+
 // ---------- boot ----------
 async function boot() {
   initTheme();
@@ -1547,6 +1830,10 @@ async function boot() {
   $("aihot-refresh").addEventListener("click", loadAiHot);
   loadGitHub(cfg.ghUser, cfg.ghToken);
   loadVps(cfg.vpsUrl);
+  loadTraffic();
+  setInterval(loadTraffic, 300000);
+  loadBiliWorkbench();
+  initSrtTool();
   if (cfg.vpsUrl) setInterval(() => loadVps(cfg.vpsUrl), 15000);
   $("todo-refresh").addEventListener("click", () => {
     if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);

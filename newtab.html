@@ -164,6 +164,35 @@
         <div id="vps-body"><p class="muted small">连接中…</p></div>
       </section>
 
+      <!-- 字幕提取工作台 -->
+      <section class="card wide">
+        <header class="card-head">
+          <span class="bar" style="background: linear-gradient(180deg,#a78bfa,#f472b6)"></span>
+          <h2>字幕提取</h2>
+          <span class="grow"></span>
+          <span class="muted small">左边找视频 · 右边拖 srt 转纯文本</span>
+        </header>
+        <div class="subtitle-workbench">
+          <div class="sw-left">
+            <p class="sw-title">B站收藏夹</p>
+            <div id="wb-bili" class="wb-bili"><p class="muted small">加载中…</p></div>
+          </div>
+          <div class="sw-right">
+            <p class="sw-title">字幕转文本</p>
+            <div id="srt-drop" class="srt-drop" title="拖 B站视频卡片自动抓字幕；或拖字幕文件转文本">
+              拖入 B站视频（自动抓字幕）或字幕文件<br />
+              <span class="muted small">视频卡片 · .srt / .vtt / .json / .ass 文件都支持</span>
+            </div>
+            <p id="srt-status" class="srt-status"></p>
+            <textarea id="srt-output" class="srt-output" rows="12" placeholder="转换后的纯文本会显示在这里，直接复制即可…"></textarea>
+            <div class="srt-actions">
+              <button id="srt-copy" class="srt-copy" type="button">📋 复制文本</button>
+              <button id="srt-clear" class="srt-clear" type="button">清空</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- AI HOT -->
       <section class="card wide">
         <header class="card-head">
@@ -195,6 +224,17 @@
           <span id="gh-user" class="muted small"></span>
         </header>
         <div id="gh-body"><p class="muted small">加载中…</p></div>
+      </section>
+
+      <!-- 流量卡 -->
+      <section class="card wide">
+        <header class="card-head">
+          <span class="bar sky"></span>
+          <h2>流量卡</h2>
+          <span class="grow"></span>
+          <span id="traffic-host" class="muted small">中兴 F50 Pro</span>
+        </header>
+        <div id="traffic-body"><p class="muted small">加载中…</p></div>
       </section>
     </main>
     <script src="newtab.js"></script>

@@ -5,9 +5,10 @@
     <title>新标签页设置</title>
     <link rel="stylesheet" href="newtab.css" />
     <style>
-      .opt { max-width: 560px; margin: 40px auto; padding: 0 20px; }
+      .opt { max-width: 1000px; margin: 32px auto; padding: 0 24px; }
       .opt-head { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
       .opt-head h1 { min-width: 0; flex: 1; margin: 0; font-size: 20px; }
+      .fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; }
       .field { margin-bottom: 18px; }
       .field label { display: block; font-size: 13px; margin-bottom: 6px; }
       .field input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); font-size: 13px; }
@@ -50,33 +51,35 @@
         <p class="hint">关闭后首页会隐藏对应模块，并跳过该模块的数据加载。</p>
       </div>
 
-      <div class="field">
-        <label>城市（天气）</label>
-        <input id="city" type="text" placeholder="如 武汉 / 北京 / Tokyo" />
-        <p class="hint">用于天气与预报,留空则不显示天气。</p>
-      </div>
+      <div class="fields-grid">
+        <div class="field">
+          <label>城市（天气）</label>
+          <input id="city" type="text" placeholder="如 武汉 / 北京 / Tokyo" />
+          <p class="hint">用于天气与预报,留空则不显示天气。</p>
+        </div>
 
-      <div class="field">
-        <label>Todoist API Token</label>
-        <input id="todoistToken" type="password" placeholder="从 Todoist 设置 → 集成 → 开发者 复制" />
-        <p class="hint">Todoist → Settings → Integrations → Developer → API token。<a href="https://app.todoist.com/app/settings/integrations/developer" target="_blank">打开</a></p>
-      </div>
+        <div class="field">
+          <label>Todoist API Token</label>
+          <input id="todoistToken" type="password" placeholder="从 Todoist 设置 → 集成 → 开发者 复制" />
+          <p class="hint">Todoist → Settings → Integrations → Developer → API token。<a href="https://app.todoist.com/app/settings/integrations/developer" target="_blank">打开</a></p>
+        </div>
 
-      <div class="field">
-        <label>GitHub 用户名</label>
-        <input id="ghUser" type="text" placeholder="如 octocat（你自己的用户名）" />
-      </div>
+        <div class="field">
+          <label>GitHub 用户名</label>
+          <input id="ghUser" type="text" placeholder="如 octocat（你自己的用户名）" />
+        </div>
 
-      <div class="field">
-        <label>GitHub Token（可选,私有仓库/更高频率）</label>
-        <input id="ghToken" type="password" placeholder="ghp_...（留空则用公开接口）" />
-        <p class="hint">只读即可:<a href="https://github.com/settings/tokens?type=beta" target="_blank">生成 token</a>（勾选 public/starred 读取权限）。</p>
-      </div>
+        <div class="field">
+          <label>GitHub Token（可选,私有仓库/更高频率）</label>
+          <input id="ghToken" type="password" placeholder="ghp_...（留空则用公开接口）" />
+          <p class="hint">只读即可:<a href="https://github.com/settings/tokens?type=beta" target="_blank">生成 token</a>（勾选 public/starred 读取权限）。</p>
+        </div>
 
-      <div class="field">
-        <label>VPS 探针地址（可选）</label>
-        <input id="vpsUrl" type="text" placeholder="https://你的域名/stats" />
-        <p class="hint">返回 {load, cpu_count, mem, disk, uptime, hostname} 的 JSON 接口(需 HTTPS)。留空则不显示探针。</p>
+        <div class="field">
+          <label>VPS 探针地址（可选）</label>
+          <input id="vpsUrl" type="text" placeholder="https://logicweaver.me/vps/stats" />
+          <p class="hint">返回 {load, cpu_count, mem, disk, uptime, hostname} 的 JSON 接口。留空则不显示探针。</p>
+        </div>
       </div>
 
       <div class="save-actions">

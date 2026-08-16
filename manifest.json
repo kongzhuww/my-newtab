@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "LogicWeaver 新标签页",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "个人新标签页仪表盘：时钟、B站收藏夹、Todoist 待办、GitHub Star、VPS 探针、小黑盒。",
   "chrome_url_overrides": { "newtab": "newtab.html" },
   "permissions": ["storage", "topSites", "bookmarks", "favicon", "alarms", "activeTab"],
   "host_permissions": [
     "https://api.bilibili.com/*",
     "https://*.bilibili.com/*",
+    "https://*.hdslb.com/*",
     "https://api.todoist.com/*",
     "https://api.github.com/*",
     "https://cdn.jsdelivr.net/*",
@@ -15,7 +16,9 @@
     "https://geocoding-api.open-meteo.com/*",
     "https://aihot.virxact.com/*",
     "https://monster-siren.hypergryph.com/*",
-    "https://*.hycdn.cn/*"
+    "https://*.hycdn.cn/*",
+    "http://192.168.0.1/*",
+    "https://logicweaver.me/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; frame-src 'self' https://player.bilibili.com blob:; img-src 'self' https: http: data: blob:;",
