@@ -275,7 +275,7 @@ async function loadVps(url) {
 // ---------- browser shortcuts + bookmarks ----------
 function favi(url) {
   try {
-    return chrome.runtime.getURL("_favicon/?pageUrl=" + encodeURIComponent(url) + "&size=32");
+    return chrome.runtime.getURL("_favicon/?pageUrl=" + encodeURIComponent(url) + "&size=64");
   } catch {
     return "";
   }
@@ -795,10 +795,31 @@ function createLauncherIcon(link, className = "launcher-favicon") {
   const fallback = el("span", "launcher-fallback");
   fallback.textContent = (link.title || hostOf(link.url)).trim().slice(0, 1).toUpperCase();
   const img = document.createElement("img");
-  img.src = favi(link.url);
   img.alt = "";
-  img.addEventListener("load", () => (fallback.style.display = "none"));
-  img.addEventListener("error", () => (img.style.display = "none"));
+  img.referrerPolicy = "no-referrer";
+
+  const host = hostOf(link.url);
+  let origin = "";
+  try { origin = new URL(link.url).origin; } catch {}
+
+  // 图标源优先级：favicon.im(国内可达、真实图标) → 浏览器本地缓存 → 站点自带 favicon.ico
+  const sources = ["https://favicon.im/" + encodeURIComponent(host), favi(link.url)];
+  if (origin) sources.push(origin + "/favicon.ico");
+
+  let idx = 0;
+  img.addEventListener("load", () => {
+    fallback.style.display = "none";
+  });
+  img.addEventListener("error", () => {
+    idx += 1;
+    if (idx < sources.length) {
+      img.src = sources[idx];
+    } else {
+      img.style.display = "none";
+    }
+  });
+
+  img.src = sources[0];
   icon.appendChild(fallback);
   icon.appendChild(img);
   return icon;
@@ -901,7 +922,21 @@ function renderLauncherFolderDialog(groupName = launcherState.activeFolder) {
 
 function openLauncherFolder(groupName) {
   renderLauncherFolderDialog(groupName);
-  $("launcher-folder-dialog").showModal();
+  $("launcher-folder-backdrop").hidden = false;
+  // 非模态打开：允许把文件夹里的网站拖出去，也能从外面拖进来
+  const dialog = $("launcher-folder-dialog");
+  if (!dialog.open) dialog.show();
+  positionFolderDialog();
+}
+
+function positionFolderDialog() {
+  const sites = document.querySelector(".launcher-sites");
+  const dialog = $("launcher-folder-dialog");
+  if (!sites || !dialog) return;
+  const rect = sites.getBoundingClientRect();
+  dialog.style.top = Math.max(8, rect.top) + "px";
+  dialog.style.left = Math.max(8, rect.left) + "px";
+  dialog.style.right = "auto";
 }
 
 function closeFolderMenu() {
@@ -1214,6 +1249,18 @@ async function initLaunchers() {
   $("launcher-folder-close").addEventListener("click", () => $("launcher-folder-dialog").close());
   $("launcher-folder-dialog").addEventListener("close", () => {
     launcherState.activeFolder = "";
+    $("launcher-folder-backdrop").hidden = true;
+  });
+  $("launcher-folder-dialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    $("launcher-folder-dialog").close();
+  });
+  // 点击弹窗外部关闭（用 mousedown：它先于打开动作，避免打开文件夹的那次 click 冒泡误关）
+  document.addEventListener("mousedown", (event) => {
+    const dialog = $("launcher-folder-dialog");
+    if (dialog && dialog.open && !dialog.contains(event.target)) {
+      dialog.close();
+    }
   });
   $("launcher-cancel").addEventListener("click", () => $("launcher-dialog").close());
   $("group-merge-cancel").addEventListener("click", () => $("group-merge-dialog").close());

@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "LogicWeaver 新标签页",
-  "version": "0.8.3",
+  "version": "0.8.6",
   "description": "个人新标签页仪表盘：时钟、B站收藏夹、Todoist 待办、GitHub Star、VPS 探针、小黑盒。",
   "chrome_url_overrides": { "newtab": "newtab.html" },
-  "permissions": ["storage", "topSites", "bookmarks", "favicon"],
+  "permissions": ["storage", "topSites", "bookmarks", "favicon", "alarms"],
   "host_permissions": [
     "https://api.bilibili.com/*",
     "https://*.bilibili.com/*",
@@ -18,12 +18,13 @@
     "https://*.hycdn.cn/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; frame-src 'self' https://player.bilibili.com blob:;",
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-src 'self' https://player.bilibili.com blob:; img-src 'self' https: http: data: blob:;",
     "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; child-src blob:; frame-src blob:;"
   },
   "options_page": "options.html",
   "sandbox": {
     "pages": ["wallpaper-sandbox.html"]
   },
-  "action": { "default_title": "新标签页设置" }
+  "action": { "default_title": "收藏当前网站到常用网站" },
+  "background": { "service_worker": "background.js" }
 }

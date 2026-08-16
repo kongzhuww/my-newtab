@@ -433,7 +433,7 @@ body.hide-todo:not(.hide-weather) .launcher-center { grid-column: 2 / span 2; }
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 5px 16px rgba(0, 0, 0, 0.22);
   transition: transform 0.15s, background 0.15s;
@@ -610,7 +610,21 @@ body.hide-todo:not(.hide-weather) .launcher-center { grid-column: 2 / span 2; }
 }
 .folder-menu button:hover { background: var(--surface-hover); }
 .folder-menu button:disabled { opacity: 0.4; cursor: default; }
-.launcher-folder-dialog { width: min(620px, calc(100vw - 32px)); }
+.launcher-folder-dialog { width: min(620px, calc(100vw - 32px)); z-index: 68; }
+.launcher-folder-dialog[open] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-height: calc(100vh - 90px);
+}
+.launcher-folder-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 66;
+  background: rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+.launcher-folder-backdrop[hidden] { display: none; }
 .launcher-folder-dialog-shell { padding: 20px; }
 .launcher-folder-dialog-shell header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .launcher-folder-dialog-shell h2 { min-width: 0; flex: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
