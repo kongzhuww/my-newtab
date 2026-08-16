@@ -1229,3 +1229,31 @@ body[data-page="daily"] .wrap { transform: translateY(0); }
 }
 
 [hidden] { display: none !important; }
+
+/* AI 视频分析 */
+.ai-analyze-input {
+  width: 100%; box-sizing: border-box;
+  padding: 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font-size: 13px; line-height: 1.6;
+  resize: vertical; font-family: inherit;
+}
+.ai-analyze-input:focus { outline: none; border-color: #a78bfa; }
+.ai-analyze-actions { display: flex; gap: 10px; margin-top: 10px; }
+.ai-analyze-run, .ai-analyze-clear {
+  padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ai-analyze-run { background: #c084fc; border-color: transparent; color: #08121a; font-weight: 600; }
+.ai-analyze-run:hover { background: #d8b4fe; }
+.ai-analyze-run:disabled { opacity: 0.6; cursor: not-allowed; }
+.ai-analyze-clear:hover { border-color: var(--border-strong); }
+.ai-analyze-output { margin-top: 12px; }
+.ai-analyze-result {
+  margin: 0; padding: 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font-size: 13px; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 420px; overflow-y: auto;
+}

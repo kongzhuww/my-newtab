@@ -13,7 +13,7 @@
   const BASE_W = 160;
   const BASE_H = 200;
   const WALK_SPEED = 0.8;
-  const FRAME_INTERVAL = 1000 / 30;
+  const FRAME_INTERVAL = 1000 / 24;
 
   let models = [];
   let modelsState = "idle";
@@ -430,6 +430,20 @@
   picker.querySelector(".pet-backdrop").addEventListener("click", closePicker);
   searchEl.addEventListener("input", () => renderList(searchEl.value));
   window.addEventListener("resize", closeMenu);
+
+  // 页面不可见时暂停 Spine 渲染与走路，避免后台空转耗电/卡顿
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopWalking(false);
+      try { player?.stopRendering?.(); } catch {}
+    } else {
+      if (player) {
+        player.stopRequestAnimationFrame = false;
+        try { player.drawFrame(true); } catch {}
+      }
+      if (walking && current) startWalking();
+    }
+  });
 
   updateTransform();
   try {

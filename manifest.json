@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "LogicWeaver 新标签页",
-  "version": "1.4.6",
+  "version": "1.5.0",
   "description": "个人新标签页仪表盘：时钟、B站收藏夹、Todoist 待办、GitHub Star、VPS 探针、小黑盒。",
   "chrome_url_overrides": { "newtab": "newtab.html" },
-  "permissions": ["storage", "topSites", "bookmarks", "favicon", "alarms", "activeTab", "cookies"],
+  "permissions": ["storage", "topSites", "bookmarks", "favicon", "alarms", "activeTab", "cookies", "declarativeNetRequest"],
   "host_permissions": [
     "https://api.bilibili.com/*",
     "https://*.bilibili.com/*",
@@ -18,7 +18,9 @@
     "https://monster-siren.hypergryph.com/*",
     "https://*.hycdn.cn/*",
     "http://192.168.0.1/*",
-    "https://logicweaver.me/*"
+    "https://logicweaver.me/*",
+    "http://127.0.0.1:3080/*",
+    "http://localhost:3080/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; frame-src 'self' https://player.bilibili.com blob:; img-src 'self' https: http: data: blob:;",

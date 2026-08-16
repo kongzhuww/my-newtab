@@ -57,6 +57,12 @@ function tick() {
 }
 
 // ---------- Bilibili ----------
+function fetchTimeout(url, opts = {}, ms = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 async function biliJson(url) {
   const r = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
   return r.json();
@@ -265,8 +271,9 @@ function gauge(label, pct, sub) {
 async function loadVps(url) {
   const body = $("vps-body");
   if (!url) { body.innerHTML = `<p class="notice">未配置 VPS。到 <a href="options.html">设置</a> 填探针地址（返回 stats JSON 的 HTTPS 接口）。</p>`; return; }
+  if (document.hidden) return;
   try {
-    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    const r = await fetchTimeout(url, { headers: { Accept: "application/json" } }, 8000);
     const d = await r.json();
     if (d.offline || !d.mem) { body.innerHTML = `<p class="notice">探针离线（/stats 未开放或代理未运行）。</p>`; return; }
     if (d.hostname) $("vps-host").textContent = d.hostname;
@@ -1555,7 +1562,7 @@ async function loadTraffic() {
   const body = $("traffic-body");
   if (!body) return;
   try {
-    const r = await fetch(TRAFFIC_API, { cache: "no-store" });
+    const r = await fetchTimeout(TRAFFIC_API, { cache: "no-store" }, 6000);
     const j = await r.json();
     const tx = Number(j.flux_monthly_tx_bytes || j.monthly_tx_bytes || 0);
     const rx = Number(j.flux_monthly_rx_bytes || j.monthly_rx_bytes || 0);
@@ -1741,7 +1748,19 @@ async function fetchBiliSubtitle(bvid) {
   const pj = await biliJson(`https://api.bilibili.com/x/player/wbi/v2?${q}`);
   const subs = pj?.data?.subtitle?.subtitles || [];
   if (!subs.length) return { ok: false, reason: "该视频没有 AI 字幕" };
-  const subJ = await biliJson("https:" + subs[0].subtitle_url);
+  // 优先选中文（AI 中文 / 简体 / 繁体），否则取第一条；避免取到外语字幕被误当"乱码"
+  const pick = subs.find((s) => /zh|中文|汉语|漢語/i.test((s.lan || "") + " " + (s.lan_doc || ""))) || subs[0];
+  const rawUrl = pick.subtitle_url || "";
+  const subUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : "https:" + rawUrl;
+  // 显式按 UTF-8 解码字幕 JSON，防止 BOM / 编码不一致导致乱码
+  const subR = await fetch(subUrl, { credentials: "include", headers: { Accept: "application/json" } });
+  const subBuf = await subR.arrayBuffer();
+  let subJ;
+  try {
+    subJ = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(subBuf));
+  } catch {
+    subJ = JSON.parse(new TextDecoder("gb18030").decode(subBuf));
+  }
   const body = subJ?.body || [];
   const lines = body.map((b) => (b.content || "").trim()).filter(Boolean);
   if (!lines.length) return { ok: false, reason: "字幕内容为空" };
@@ -1822,7 +1841,21 @@ function initSrtTool() {
     output.value = "";
     setStatus("处理中…", "busy");
     try {
-      const text = await f.text();
+      // 自动识别编码：BOM 判断 UTF-16；否则优先 UTF-8，非法字节（GBK/ANSI）回退 GB18030
+      const buf = await f.arrayBuffer();
+      const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
+      let text;
+      if (head[0] === 0xff && head[1] === 0xfe) {
+        text = new TextDecoder("utf-16le").decode(buf);
+      } else if (head[0] === 0xfe && head[1] === 0xff) {
+        text = new TextDecoder("utf-16be").decode(buf);
+      } else {
+        try {
+          text = new TextDecoder("utf-8", { fatal: true }).decode(buf);
+        } catch {
+          text = new TextDecoder("gb18030").decode(buf);
+        }
+      }
       const result = extractSubtitles(text, f.name);
       if (result.trim()) {
         output.value = result;
@@ -2627,6 +2660,73 @@ function renderFolderOrganizer(results, srcFolder, targetFolders, allFolders, to
 const foState = { aliases: {}, auto: false, mid: "", srcId: null, page: 1, pendingScroll: false, groups: {} };
 
 // ---------- boot ----------
+// ---------- AI 视频分析 ----------
+function initAiAnalyze() {
+  const input = $("ai-analyze-input");
+  const run = $("ai-analyze-run");
+  const clear = $("ai-analyze-clear");
+  const output = $("ai-analyze-output");
+  const status = $("ai-analyze-status");
+  if (!input || !run || !output) return;
+
+  run.addEventListener("click", () => {
+    const text = input.value.trim();
+    if (!text) {
+      output.innerHTML = `<p class="notice">请先粘贴视频的字幕 / 文案文本。</p>`;
+      return;
+    }
+    run.disabled = true;
+    run.textContent = "⏳ 分析中…";
+    if (status) status.textContent = "调用 DeepSeek…";
+    output.innerHTML = `<p class="muted small">正在分析，可能需要几十秒…</p>`;
+
+    let settled = false;
+    const finish = () => {
+      run.disabled = false;
+      run.textContent = "✨ 分析价值";
+    };
+
+    const port = chrome.runtime.connect({ name: "aiAnalyze" });
+    port.onMessage.addListener((res) => {
+      if (settled) return;
+      settled = true;
+      if (res && res.ok) {
+        const pre = el("pre", "ai-analyze-result");
+        pre.textContent = res.text;
+        output.innerHTML = "";
+        output.appendChild(pre);
+        if (status) status.textContent = "完成";
+      } else {
+        output.innerHTML = `<p class="notice">分析失败：${esc((res && res.error) || "未知错误")}</p>`;
+        if (status) status.textContent = "失败";
+      }
+      finish();
+      try { port.disconnect(); } catch {}
+    });
+    port.onDisconnect.addListener(() => {
+      if (settled) return;
+      settled = true;
+      output.innerHTML = `<p class="notice">连接中断：DeepSeek Harness 可能已停止，或扩展后台被回收。请确认 harness 正在运行（dsh web）后重试。</p>`;
+      if (status) status.textContent = "连接中断";
+      finish();
+    });
+    try {
+      port.postMessage({ type: "run", text });
+    } catch (e) {
+      settled = true;
+      output.innerHTML = `<p class="notice">无法连接 DeepSeek Harness（${esc((e && e.message) ? e.message : String(e))}）。请确认本机 harness 正在运行（dsh web）。</p>`;
+      if (status) status.textContent = "连接失败";
+      finish();
+    }
+  });
+
+  clear.addEventListener("click", () => {
+    input.value = "";
+    output.innerHTML = `<p class="muted small">粘贴一段视频文本，让 DeepSeek 分析这个视频有什么价值。</p>`;
+    if (status) status.textContent = "";
+  });
+}
+
 async function boot() {
   initTheme();
   initPageSwitch();
@@ -2645,6 +2745,7 @@ async function boot() {
   loadTraffic();
   setInterval(loadTraffic, 300000);
   initSrtTool();
+  initAiAnalyze();
   loadFolderOrganizer();
   loadBiliWorkbench();
   loadSubfolderManager();
@@ -2653,6 +2754,16 @@ async function boot() {
   if (cfg.vpsUrl) setInterval(() => loadVps(cfg.vpsUrl), 15000);
   $("todo-refresh").addEventListener("click", () => {
     if (homeModulePrefs.showTodo) loadTodos(cfg.todoistToken);
+  });
+
+  // 页面不可见时暂停背景视频/动画，回到前台再恢复
+  document.addEventListener("visibilitychange", () => {
+    const media = $("hero-background-media");
+    if (!media) return;
+    media.querySelectorAll("video").forEach((v) => {
+      if (document.hidden) v.pause();
+      else if (v.paused) v.play().catch(() => {});
+    });
   });
 }
 boot();
