@@ -5,6 +5,7 @@
   const API = "https://monster-siren.hypergryph.com/api";
   const IDLE = { queue: [], index: -1 };
   let albums = [], albumsLoaded = false, allSongs = [], current = null, playing = false;
+  const albumCovers = {}; // 专辑 cid → 封面 url（歌曲接口不带封面，靠这个映射取）
   let lyrics = [], mode = "shuffle", lyricIndex = -2, lastTopLyric = "", lastProgressSecond = -1;
   const audio = new Audio();
 
@@ -83,6 +84,7 @@
     browse.innerHTML = '<p class="ms-hint">加载中…</p>';
     try {
       albums = await api("/albums"); albumsLoaded = true;
+      albums.forEach((a) => { albumCovers[a.cid] = a.coverUrl; });
       api("/songs").then((d) => { allSongs = d.list || []; }).catch(() => {});
       renderAlbums();
     } catch { browse.innerHTML = '<p class="ms-hint">加载失败</p>'; }
@@ -105,13 +107,15 @@
     try {
       const d = await api(`/album/${a.cid}/detail`);
       browse.innerHTML = "";
+      const g = mk("div", "ms-songs");
       (d.songs || []).forEach((s) => {
         const b = mk("button", "ms-song");
-        b.textContent = s.name;
+        b.innerHTML = `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(https(s.coverUrl || a.coverUrl))}"><span>${esc(s.name)}</span>`;
         b.onclick = () => playCid(s.cid);
         if (current && current.cid === s.cid) b.classList.add("active");
-        browse.appendChild(b);
+        g.appendChild(b);
       });
+      browse.appendChild(g);
     } catch { browse.innerHTML = '<p class="ms-hint">加载失败</p>'; }
   }
   function artistText() { return current ? ((current.artists || []).join(", ") || "Monster Siren") : "Monster Siren"; }
@@ -132,7 +136,7 @@
       $(".ms-artist", panel).textContent = artistText();
       topTitle.textContent = d.name;
       setTopLyric("");
-      $(".ms-cover", panel).src = https(d.coverUrl || "");
+      $(".ms-cover", panel).src = https(d.coverUrl || albumCovers[d.albumCid] || "");
       loadLyric(d.lyricUrl);
       if (tv.style.display !== "none") loadMV(d.name);
       renderModeBtn();
