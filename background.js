@@ -113,10 +113,10 @@ async function ensureHarnessDnrRule() {
 const dnrReady = ensureHarnessDnrRule();
 
 // harness RPC：POST /api/<method>，payload 为直接参数（非 {args} 包装）
-async function harnessRpc(method, payload) {
+async function harnessRpc(method, payload, timeoutMs = 15000) {
   await dnrReady; // 确保 Origin 改写规则已注册，避免扩展刚重载时首请求被 fence 403
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 15000); // 15s 超时，防止单个请求挂起拖住轮询
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs); // 默认 15s，防止单个请求挂起拖住轮询
   let res;
   try {
     res = await fetch(`${HARNESS_BASE}/api/${method}`, {
@@ -194,7 +194,7 @@ async function handleChatOp(op, payload) {
     const sessionId = await ensureChatSession();
     const sinceSeq = Number(payload && payload.sinceSeq) || -1;
     const [hist, models] = await Promise.all([
-      harnessRpc("session.history", { sessionId }),
+      harnessRpc("session.history", { sessionId }, 60000), // 大会话 history 可达 8MB+，放宽超时
       harnessRpc("session.models", { sessionId }),
     ]);
     const all = ((hist && hist.events) || []).filter((e) => e.event && e.event.seq > sinceSeq);
@@ -248,7 +248,7 @@ async function handleChatOp(op, payload) {
   if (op === "poll") {
     const sessionId = await ensureChatSession();
     const sinceSeq = Number(payload && payload.sinceSeq) || -1;
-    const hist = await harnessRpc("session.history", { sessionId });
+    const hist = await harnessRpc("session.history", { sessionId }, 60000);
     const events = ((hist && hist.events) || []).filter((e) => e.event && e.event.seq > sinceSeq);
     let done = false;
     for (const e of events) if (e.event.type === "turn/end") done = true;
